@@ -38,11 +38,42 @@
     <div class="chat-container">
       <div id="chat-log" class="chat-log"></div>
       
+      <div class="settings-panel">
+        <div class="voice-settings">
+          <label for="voice-type">ボイスタイプ:</label>
+          <select id="voice-type">
+            <option value="dummy:default">デフォルト</option>
+            <option value="azure:ja-JP-NanamiNeural">Nanami（女性）</option>
+            <option value="azure:ja-JP-KeitaNeural">Keita（男性）</option>
+            <option value="azure:ja-JP-AoiNeural">Aoi（女性）</option>
+            <option value="voicevox:1">四国めたん（VOICEVOX）</option>
+            <option value="voicevox:2">ずんだもん（VOICEVOX）</option>
+            <option value="voicevox:3">春日部つむぎ（VOICEVOX）</option>
+            <option value="voicevox:8">波音リツ（VOICEVOX）</option>
+          </select>
+        </div>
+        
+        <div class="lip-sync-settings">
+          <label for="lip-sync-mode">リップシンク:</label>
+          <select id="lip-sync-mode">
+            <option value="auto">自動</option>
+            <option value="audio">音声解析</option>
+            <option value="dummy">ダミー</option>
+            <option value="off">オフ</option>
+          </select>
+        </div>
+      </div>
+      
       <div class="chat-input-area">
         <input type="text" id="user-input" placeholder="メッセージを入力...">
         <button id="send-button">送信</button>
       </div>
     </div>
+  </div>
+
+  <!-- リップシンクテストボタン -->
+  <div class="test-controls">
+    <button id="lip-sync-test">口パクテスト</button>
   </div>
 
   <!-- デバッグ情報表示領域 - 常に表示 -->
