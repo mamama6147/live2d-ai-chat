@@ -748,6 +748,7 @@ function setupChatUI() {
 // テストコントロールのセットアップ
 function setupTestControls() {
   const lipSyncTestButton = document.getElementById('lip-sync-test');
+  const voicevoxTestButton = document.getElementById('voicevox-test');
   
   if (!lipSyncTestButton) {
     showDebugInfo('リップシンクテストボタンが見つかりません');
@@ -782,4 +783,66 @@ function setupTestControls() {
       addMessageToUI('ai', '音声テストに失敗しました。サーバーが起動しているか確認してください。');
     }
   });
+  
+  // VOICEVOXテストボタンのイベント
+  if (voicevoxTestButton) {
+    voicevoxTestButton.addEventListener('click', async () => {
+      showDebugInfo('VOICEVOXテストを実行します');
+      
+      try {
+        // 選択されたボイスタイプを取得
+        const voiceTypeSelect = document.getElementById('voice-type');
+        const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'voicevox:1';
+        
+        // voicevox:のプレフィックスがあるか確認
+        if (!voiceType.startsWith('voicevox:')) {
+          // 選択されていない場合は明示的にVOICEVOXボイスを選択する
+          addMessageToUI('ai', '【VOICEVOXテスト】 ※VOICEVOXの声を選んでください。強制的に四国めたんで実行します。');
+          runVoicevoxTest('1');
+          return;
+        }
+        
+        // voicevox:1 から 1 を抽出
+        const voiceId = voiceType.split(':')[1];
+        
+        await runVoicevoxTest(voiceId);
+      } catch (error) {
+        showDebugInfo(`VOICEVOXテストエラー: ${error.message}`);
+        console.error('VOICEVOXテストエラー:', error);
+        addMessageToUI('ai', 'VOICEVOXテストに失敗しました。VOICEVOXエンジンが起動しているか確認してください。');
+      }
+    });
+  }
+  
+  // VOICEVOXテスト実行関数
+  async function runVoicevoxTest(voiceId) {
+    showDebugInfo(`VOICEVOXテスト実行 (話者ID: ${voiceId})`);
+    
+    try {
+      // VOICEVOXテストAPIを呼び出す
+      const response = await fetch(`${API_BASE_URL}/api/voicevox-test?voiceId=${voiceId}`);
+      
+      if (!response.ok) {
+        throw new Error(`VOICEVOXテストAPIエラー: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // テストメッセージを表示
+      addMessageToUI('ai', `【VOICEVOXテスト】 ${data.reply}`);
+      
+      // 音声再生とリップシンク
+      if (data.audioUrl) {
+        playVoice(data.audioUrl);
+      }
+      
+      // 表情変更
+      if (model && data.emotion) {
+        changeExpression(data.emotion);
+      }
+      
+    } catch (error) {
+      throw error;
+    }
+  }
 }
