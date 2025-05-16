@@ -361,23 +361,15 @@ function setupChatUI() {
   async function sendMessage() {
     const message = userInput.value.trim();
     if (!message) return;
-    
+
     // UIにユーザーメッセージを追加
     addMessageToUI('user', message);
     userInput.value = '';
-    
+
     try {
       showDebugInfo(`メッセージ送信: ${message}`);
-      
-      // APIが実装されていない場合は簡易的な応答を返す
-      // 実際のAPIが実装されたらこの部分を削除
-      const dummyResponse = {
-        reply: 'こんにちは！現在APIは実装中です。',
-        emotion: 'happy'
-      };
-      
-      // 本番では以下のようにAPIを呼び出す
-      /*
+
+      // 実際のAPIを呼び出し
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
@@ -385,79 +377,32 @@ function setupChatUI() {
         },
         body: JSON.stringify({ message })
       });
-      
+
       if (!response.ok) {
         throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
       }
-      
+
       const data = await response.json();
-      */
-      
-      // 開発中はダミーレスポンスを使用
-      const data = dummyResponse;
       showDebugInfo(`応答受信: ${data.reply}`);
-      
+
       // AIの応答をUIに追加
       addMessageToUI('ai', data.reply);
-      
-      // 音声再生（本番ではAPIからの応答を使用）
-      // if (data.audioUrl) {
-      //   playVoice(data.audioUrl);
-      // }
-      
+
+      // 音声再生
+      if (data.audioUrl) {
+        showDebugInfo(`音声URL: ${data.audioUrl}`);
+        playVoice(data.audioUrl);
+      }
+
       // 表情変更などの追加処理
       if (model && data.emotion) {
         changeExpression(data.emotion);
       }
-      
+
     } catch (error) {
       showDebugInfo(`エラー: ${error.message}`);
       console.error('メッセージ送信エラー:', error);
       addMessageToUI('ai', 'すみません、エラーが発生しました。もう一度お試しください。');
     }
-  }
-  
-  // メッセージをUIに追加
-  function addMessageToUI(sender, text) {
-    const messageElement = document.createElement('div');
-    messageElement.classList.add('chat-message');
-    messageElement.classList.add(sender === 'user' ? 'user-message' : 'ai-message');
-    messageElement.textContent = text;
-    
-    chatLog.appendChild(messageElement);
-    
-    // 自動スクロール
-    chatLog.scrollTop = chatLog.scrollHeight;
-  }
-}
-
-// 表情変更
-function changeExpression(emotion) {
-  if (!model) return;
-  
-  try {
-    showDebugInfo(`表情変更: ${emotion}`);
-    
-    // 感情に基づいて表情を変更
-    switch (emotion) {
-      case 'happy':
-        model.expression('exp_01'); // 笑顔
-        break;
-      case 'sad':
-        model.expression('exp_02'); // 悲しい
-        break;
-      case 'angry':
-        model.expression('exp_03'); // 怒り
-        break;
-      case 'surprised':
-        model.expression('exp_04'); // 驚き
-        break;
-      default:
-        model.expression('exp_01'); // デフォルト（笑顔）
-        break;
-    }
-  } catch (e) {
-    showDebugInfo(`表情変更エラー: ${e.message}`);
-    console.error('表情変更エラー:', e);
   }
 }
