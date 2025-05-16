@@ -157,6 +157,8 @@ body {
   bottom: 20px;
   right: 20px;
   z-index: 100;
+  display: flex;
+  gap: 10px;
 }
 
 .test-controls button {
@@ -175,6 +177,15 @@ body {
   background-color: #f4511e;
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+/* VOICEVOXテストボタン特別スタイル */
+.test-controls button#voicevox-test {
+  background-color: #4CAF50; /* 緑色 */
+}
+
+.test-controls button#voicevox-test:hover {
+  background-color: #388E3C; /* 濃い緑 */
 }
 
 /* レスポンシブデザイン */
