@@ -12,6 +12,21 @@ const API_BASE_URL = 'http://localhost:3000';
 // デバッグモード設定
 const DEBUG_MODE = true;
 
+// Live2D ↔ Pixi を結びつける（必ず 1 回）
+// PIXI.live2d.Live2DModel.registerTicker(PIXI.Ticker.shared);
+// console.log('[debug] ticker set →', PIXI.live2d.AutoUpdate.ticker);
+
+function waitForLive2DReady() {
+  return new Promise((resolve) => {
+    const id = setInterval(() => {
+      if (PIXI.live2d && PIXI.live2d.Live2DModel && PIXI.live2d.AutoUpdate) {
+        clearInterval(id);
+        resolve();
+      }
+    }, 16);            // ほぼ 1 frame ごとに確認
+  });
+}
+
 // ローディング要素
 const loadingElement = document.getElementById('loading');
 
@@ -120,6 +135,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Live2D初期化
 async function initLive2D() {
+  // Live2D プラグインの初期化完了を待つ
+  await waitForLive2DReady();
+  console.log('[debug] Live2D ready →', PIXI.live2d);
+
   showDebugInfo('Live2D初期化を開始します...');
   
   // キャンバスの取得
@@ -138,21 +157,19 @@ async function initLive2D() {
   });
   
   showDebugInfo('PIXIアプリケーションの初期化が完了しました');
+  console.log('[debug] at init start  ▶', PIXI?.live2d?.AutoUpdate?.ticker);
   
   // Live2D SDKの初期化
   try {
-    // ティッカーを登録
-    PIXI.live2d.Live2DModel.registerTicker(PIXI.Ticker);
+    PIXI.live2d.Live2DModel.registerTicker(PIXI.Ticker.shared);
+    console.log('[debug] after register ▶', PIXI.live2d.AutoUpdate.ticker);
     
-    // グローバル設定
-    PIXI.live2d.Live2DModel.setConfig({
-      cubism4: true,          // Cubism 4を使用
-      supportCubism2: true,   // Cubism 2サポートを有効化
-      motionPreload: 'idle',  // アイドルモーションをプリロード
-      motionFadingDuration: 500, // モーションのフェード時間（ミリ秒）
-      idleMotionFadingDuration: 2000, // アイドルモーションのフェード時間
-      pixiApply: true,        // PIXI.jsのグローバル関数を使用
-    });
+    // Live2DModel.setConfig を使わずに:
+    const cfg = PIXI.live2d.config;
+    cfg.cubism4 = true;                 // Cubism 4 を使用
+    cfg.motionFadingDuration = 500;     // モーションのフェード
+    cfg.idleMotionFadingDuration = 2000;
+    cfg.supportCubism2 = true;          // Cubism2 も使うなら
     
     showDebugInfo('Live2Dフレームワーク初期化完了');
   } catch (e) {
@@ -162,11 +179,16 @@ async function initLive2D() {
   
   // Live2DモデルのPATHを設定
   const modelPath = './models/nijiroumao/mao_pro.model3.json'; // 虹色まおモデルのパス
+  if (!modelPath) {
+    alert('モデルパスが設定されていません');
+    return;
+  }
   showDebugInfo(`モデルパス: ${modelPath}`);
   
   try {
     // モデルの読み込み
     showDebugInfo('Live2Dモデルの読み込みを開始します...');
+    console.log('[debug] before from    ▶', PIXI.live2d.AutoUpdate.ticker);
     
     // モデルロードオプション
     const modelOptions = {
@@ -176,9 +198,14 @@ async function initLive2D() {
     };
     
     // モデルの読み込み
-    model = await PIXI.live2d.Live2DModel.from(modelPath, modelOptions);
-    
-    showDebugInfo('Live2Dモデルの読み込みに成功しました');
+    try {
+      model = await PIXI.live2d.Live2DModel.from(modelPath, modelOptions);
+      showDebugInfo('Live2Dモデルの読み込みに成功しました');
+    } catch (loadErr) {
+      showDebugInfo(`モデル読み込み失敗: ${loadErr.message}`);
+      console.error(loadErr);               // ← ここで stack / URL が見える
+      throw loadErr;                        // 上位 catch へ
+    }
     
     // モデルのサイズとポジションを調整
     const parentWidth = canvas.parentElement.clientWidth;

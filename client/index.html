@@ -7,18 +7,18 @@
   <link rel="stylesheet" href="./style.css">
   
   <!-- Cubism Core とフレームワーク（ローカルファイル） -->
-  <!-- ダウンロードしたSDKからコピーしたファイルを使用 -->
-  <script src="./libs/live2d/core/live2dcubismcore.min.js"></script>
-  <script src="./libs/live2d/framework/live2dcubismframework.js"></script>
-  
-  <!-- PIXI.js（CDN） -->
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.8/dist/browser/pixi.min.js"></script>
-  
-  <!-- pixi-live2d-display（CDN） -->
-  <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js"></script>
-  
-  <!-- Cubism 2ランタイム（必須） -->
-  <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/js/live2d.min.js"></script>
+<!-- 1) Live2D Core -->
+<script src="/libs/live2d/core/live2dcubismcore.min.js"></script>
+
+<!-- 2) PixiJS v6 -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6/dist/browser/pixi.min.js"></script>
+
+<!-- 3) pixi-live2d-display（Cubism4 専用ビルド / CDN） -->
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
+
+<!-- 4) Cubism Framework（自前ビルド品） -->
+<script src="/libs/live2d/framework/live2dcubismframework.js"></script>
+
 </head>
 <body>
   <div class="app-container">
