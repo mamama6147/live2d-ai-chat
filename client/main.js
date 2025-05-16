@@ -108,8 +108,10 @@ async function playVoice(audioUrl) {
       const mouthOpenValue = Math.min(average / 128, 1);
       
       // Live2Dモデルのパラメータに適用
-      // 注: 実際のパラメータ名はモデルによって異なります
+      // LipSyncグループが定義されているので、ParamAが口の開閉に対応
       model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
+      // もし上記のパラメータが効かない場合は、以下を試してください
+      // model.internalModel.coreModel.setParameterValueById('ParamA', mouthOpenValue);
       
       if (audioSource.buffer) {
         requestAnimationFrame(animateMouth);
@@ -124,6 +126,8 @@ async function playVoice(audioUrl) {
       // モデルの口を閉じる
       if (model) {
         model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+        // もし上記のパラメータが効かない場合は、以下を試してください
+        // model.internalModel.coreModel.setParameterValueById('ParamA', 0);
       }
     };
     
@@ -207,22 +211,22 @@ function changeExpression(emotion) {
   if (!model) return;
   
   // 感情に基づいて表情を変更
-  // 注: 実際の表情名はモデルによって異なります
+  // このモデルでは exp_01 ~ exp_08 の表情名が定義されている
   switch (emotion) {
     case 'happy':
-      model.expression('Smile');
+      model.expression('exp_01'); // 笑顔
       break;
     case 'sad':
-      model.expression('Cry');
+      model.expression('exp_03'); // 悲しい
       break;
     case 'angry':
-      model.expression('Angry');
+      model.expression('exp_02'); // 怒り
       break;
     case 'surprised':
-      model.expression('Surprised');
+      model.expression('exp_04'); // 驚き
       break;
     default:
-      model.expression('Normal');
+      model.expression('exp_01'); // デフォルト（笑顔）
       break;
   }
 }
