@@ -15,52 +15,53 @@ const API_BASE_URL = 'http://localhost:3000';
 const DEBUG_MODE = true;
 
 // ウィンドウの読み込みを待ってから初期化
-window.addEventListener('DOMContentLoaded', async () => {
-  // グローバルオブジェクトの確認（デバッグ用）
-  if (DEBUG_MODE) {
-    console.log('===== 初期化開始 =====');
-    console.log('window.live2d:', window.live2d);
-    console.log('window.Live2DCubismCore:', window.Live2DCubismCore);
-    console.log('PIXI:', PIXI);
-    console.log('Live2DModel:', Live2DModel);
-  }
-  
-  try {
-    // Live2Dの初期化
-    await initLive2D();
-    
-    // チャットUIの設定
-    setupChatUI();
-    
-    // 初期メッセージをUIに追加
-    const chatLog = document.getElementById('chat-log');
-    if (chatLog) {
-      const initialMessage = document.createElement('div');
-      initialMessage.classList.add('chat-message', 'ai-message');
-      initialMessage.textContent = 'こんにちは！どうぞお話ししましょう。';
-      chatLog.appendChild(initialMessage);
+window.addEventListener('DOMContentLoaded', () => {
+  // DOMContentLoadedイベントではスクリプトの読み込みが完了していない場合がある
+  // 少し遅延させてからLive2D初期化を行う
+  setTimeout(async () => {
+    if (DEBUG_MODE) {
+      console.log('===== 初期化開始 =====');
+      console.log('window.live2d:', !!window.live2d);
+      console.log('window.Live2DCubismCore:', !!window.Live2DCubismCore);
     }
     
-    console.log('初期化が完了しました');
-  } catch (e) {
-    console.error('初期化エラー:', e);
-  }
+    try {
+      // Live2Dの初期化
+      await initLive2D();
+      
+      // チャットUIの設定
+      setupChatUI();
+      
+      // 初期メッセージをUIに追加
+      const chatLog = document.getElementById('chat-log');
+      if (chatLog) {
+        const initialMessage = document.createElement('div');
+        initialMessage.classList.add('chat-message', 'ai-message');
+        initialMessage.textContent = 'こんにちは！どうぞお話ししましょう。';
+        chatLog.appendChild(initialMessage);
+      }
+      
+      console.log('初期化が完了しました');
+    } catch (e) {
+      console.error('初期化エラー:', e);
+    }
+  }, 500); // 500ミリ秒の遅延
 });
 
 // Live2D初期化
 async function initLive2D() {
   console.log('Live2D初期化を開始します...');
   
-  // Cubism系のランタイム初期化確認
+  // ライブラリの存在チェック
   if (!window.Live2DCubismCore) {
     console.error('Live2DCubismCoreが見つかりません');
-    alert('Live2DCubismCoreが見つかりません。ページを再読み込みしてください。');
+    alert('Live2DCubismCoreが読み込まれていません。ページを再読み込みしてください。');
     return;
   }
   
   if (!window.live2d) {
     console.error('live2d (Cubism 2ランタイム) が見つかりません');
-    alert('live2d (Cubism 2ランタイム) が見つかりません。ページを再読み込みしてください。');
+    alert('Cubism 2ランタイムが読み込まれていません。ページを再読み込みしてください。');
     return;
   }
   
@@ -84,28 +85,19 @@ async function initLive2D() {
 
   // Live2D SDKの初期化
   try {
-    // グローバル変数を設定
-    window.PIXI = PIXI;
-    
-    // PIXIティッカーを登録
+    // PIXIティッカーを登録（アニメーションのため）
     Live2DModel.registerTicker(PIXI.Ticker);
     
-    // 明示的にCubism2を有効化
-    (Live2DModel.prototype)._cubism2 = window.live2d;
-    
-    // PIXI-Live2D-Displayの設定
+    // モデルの設定
     Live2DModel.setConfig({
-      cubism4: true,
-      cubism2: true,
-      motionPreload: 'none',
-      idleMotionFadingDuration: 2000,
-      idleMotionFadingFunction: 'linear'
+      cubism4: true,  // Cubism 4サポート
+      supportCubism2: true, // Cubism 2サポート
+      motionPreload: 'none' // モーション事前読み込みなし
     });
     
     console.log('Live2Dフレームワーク初期化完了');
   } catch (e) {
     console.error('Live2Dフレームワーク初期化エラー:', e);
-    alert('Live2Dフレームワークの初期化に失敗しました: ' + e.message);
     return;
   }
 
@@ -121,11 +113,8 @@ async function initLive2D() {
     const modelLoadOptions = {
       autoInteract: false,
       motionPreload: 'none', // モーション事前読み込みなし
-      cubism4: true // Cubism 4を明示的に指定
+      cubism4: true // Cubism 4を使用
     };
-    
-    // メインスレッドをブロックしないように読み込み処理を少し遅延
-    await new Promise(resolve => setTimeout(resolve, 100));
     
     model = await Live2DModel.from(modelPath, modelLoadOptions);
     console.log('Live2Dモデルの読み込みに成功しました');
@@ -150,15 +139,11 @@ async function initLive2D() {
     });
     
     // 開始時のモーション再生
-    if (model.internalModel && model.internalModel.motionManager && model.internalModel.motionManager.definitions.idle) {
+    if (model.internalModel && model.internalModel.motionManager) {
       model.motion('idle');
     }
     
     console.log('Live2Dモデルの表示に成功しました');
-    
-    // グローバル変数に保存（デバッグ用）
-    window.live2dModel = model;
-    window.pixiApp = app;
     
   } catch (e) {
     console.error('Live2Dモデルの読み込みに失敗しました:', e);
@@ -220,13 +205,9 @@ async function playVoice(audioUrl) {
       const mouthOpenValue = Math.min(average / 128, 1);
       
       // Live2Dモデルのパラメータに適用
-      // LipSyncグループが定義されているので適切なパラメータを使用
       try {
-        // 複数の可能性を試す
         if (model.internalModel && model.internalModel.coreModel) {
           model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
-          // ParamAはLipSyncグループに含まれている可能性がある
-          model.internalModel.coreModel.setParameterValueById('ParamA', mouthOpenValue);
         }
       } catch (e) {
         // エラーが発生しても無視（存在しないパラメータの場合）
@@ -246,7 +227,6 @@ async function playVoice(audioUrl) {
       if (model && model.internalModel && model.internalModel.coreModel) {
         try {
           model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
-          model.internalModel.coreModel.setParameterValueById('ParamA', 0);
         } catch (e) {
           // エラーが発生しても無視
         }
@@ -349,7 +329,6 @@ function changeExpression(emotion) {
     console.log('表情変更:', emotion);
     
     // 感情に基づいて表情を変更
-    // このモデルでは exp_01 ~ exp_08 の表情名が定義されている
     switch (emotion) {
       case 'happy':
         model.expression('exp_01'); // 笑顔
