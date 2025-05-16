@@ -1,0 +1,36 @@
+# Node.js 関連
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# 環境変数
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 生成された音声ファイル
+server/audio/
+
+# Live2Dモデルデータ（容量が大きいため）
+# client/public/models/
+
+# ビルド成果物
+/dist
+/build
+
+# OS関連
+.DS_Store
+Thumbs.db
+
+# エディタ関連
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ログ
+logs
+*.log
