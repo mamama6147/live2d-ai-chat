@@ -199,8 +199,8 @@ async function initLive2D() {
           const parentHeight = canvas.parentElement.clientHeight;
           
           // モデルを画面に合わせて調整
-          model.scale.set(0.4); // スケールの調整
-          model.position.set(parentWidth / 2, parentHeight / 2); // 中央に配置
+          model.scale.set(0.25); // スケールの調整
+          model.position.set(parentWidth / 2, parentHeight / 1); // 中央に配置
           model.anchor.set(0.5, 0.5);
           
           // PIXIステージに追加
