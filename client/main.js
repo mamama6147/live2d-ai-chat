@@ -8,10 +8,21 @@ let model; // Live2Dモデル
 let audioContext; // Web Audio Context
 let audioSource; // 現在の音声ソース
 
+// APIのベースURL - 開発環境と本番環境を考慮
+const API_BASE_URL = 'http://localhost:3000';
+
 // Live2D初期化
 async function initLive2D() {
+  console.log('Live2D初期化を開始します...');
+  
   // PIXIアプリケーションの設定
   const canvas = document.getElementById('live2d-canvas');
+  if (!canvas) {
+    console.error('canvas要素が見つかりません');
+    return;
+  }
+  
+  // PIXI Applicationの初期化
   app = new PIXI.Application({
     view: canvas,
     autoStart: true,
@@ -20,12 +31,22 @@ async function initLive2D() {
     resizeTo: canvas.parentElement
   });
 
-  // Live2DモデルのPATHを設定 - サンプルモデルまたは自作モデルを指定
+  // Live2D SDKの初期化
+  // PIXI.Tickerの登録（物理演算などのアニメーション用）
+  if (!Live2DModel.isModelSettingLoaded) {
+    PIXI.utils.skipHello();
+    Live2DModel.registerTicker(PIXI.Ticker);
+  }
+
+  // Live2DモデルのPATHを設定
   const modelPath = './models/nijiroumao/mao_pro.model3.json'; // 虹色まおモデルのパス
+  console.log('モデルパス:', modelPath);
 
   try {
     // モデルの読み込み
+    console.log('Live2Dモデルの読み込みを開始します...');
     model = await Live2DModel.from(modelPath, { autoInteract: false });
+    console.log('Live2Dモデルの読み込みに成功しました');
     
     // モデルのサイズとポジションを調整
     const parentWidth = canvas.parentElement.clientWidth;
@@ -51,7 +72,12 @@ async function initLive2D() {
       model.motion('idle');
     }
     
-    console.log('Live2Dモデルの読み込みに成功しました');
+    console.log('Live2Dモデルの表示に成功しました');
+    
+    // グローバル変数に保存（デバッグ用）
+    window.live2dModel = model;
+    window.pixiApp = app;
+    
   } catch (e) {
     console.error('Live2Dモデルの読み込みに失敗しました:', e);
   }
@@ -69,8 +95,12 @@ async function playVoice(audioUrl) {
       audioSource.stop();
     }
 
+    // 完全なURLの構築
+    const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE_URL}${audioUrl}`;
+    console.log('音声再生URL:', fullAudioUrl);
+
     // 音声データ取得
-    const response = await fetch(audioUrl);
+    const response = await fetch(fullAudioUrl);
     const arrayBuffer = await response.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
@@ -108,10 +138,15 @@ async function playVoice(audioUrl) {
       const mouthOpenValue = Math.min(average / 128, 1);
       
       // Live2Dモデルのパラメータに適用
-      // LipSyncグループが定義されているので、ParamAが口の開閉に対応
-      model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
-      // もし上記のパラメータが効かない場合は、以下を試してください
-      // model.internalModel.coreModel.setParameterValueById('ParamA', mouthOpenValue);
+      // LipSyncグループが定義されているので適切なパラメータを使用
+      try {
+        // 複数の可能性を試す
+        model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
+        // ParamAはLipSyncグループに含まれている可能性がある
+        model.internalModel.coreModel.setParameterValueById('ParamA', mouthOpenValue);
+      } catch (e) {
+        // エラーが発生しても無視（存在しないパラメータの場合）
+      }
       
       if (audioSource.buffer) {
         requestAnimationFrame(animateMouth);
@@ -125,9 +160,12 @@ async function playVoice(audioUrl) {
       audioSource = null;
       // モデルの口を閉じる
       if (model) {
-        model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
-        // もし上記のパラメータが効かない場合は、以下を試してください
-        // model.internalModel.coreModel.setParameterValueById('ParamA', 0);
+        try {
+          model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamA', 0);
+        } catch (e) {
+          // エラーが発生しても無視
+        }
       }
     };
     
@@ -162,8 +200,10 @@ function setupChatUI() {
     userInput.value = '';
     
     try {
+      console.log('APIリクエスト送信:', message);
+      
       // AIからの応答を取得（バックエンドAPI呼び出し）
-      const response = await fetch('/api/chat', {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -171,7 +211,12 @@ function setupChatUI() {
         body: JSON.stringify({ message })
       });
       
+      if (!response.ok) {
+        throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
+      console.log('API応答受信:', data);
       
       // AIの応答をUIに追加
       addMessageToUI('ai', data.reply);
@@ -210,36 +255,53 @@ function setupChatUI() {
 function changeExpression(emotion) {
   if (!model) return;
   
-  // 感情に基づいて表情を変更
-  // このモデルでは exp_01 ~ exp_08 の表情名が定義されている
-  switch (emotion) {
-    case 'happy':
-      model.expression('exp_01'); // 笑顔
-      break;
-    case 'sad':
-      model.expression('exp_03'); // 悲しい
-      break;
-    case 'angry':
-      model.expression('exp_02'); // 怒り
-      break;
-    case 'surprised':
-      model.expression('exp_04'); // 驚き
-      break;
-    default:
-      model.expression('exp_01'); // デフォルト（笑顔）
-      break;
+  try {
+    console.log('表情変更:', emotion);
+    
+    // 感情に基づいて表情を変更
+    // このモデルでは exp_01 ~ exp_08 の表情名が定義されている
+    switch (emotion) {
+      case 'happy':
+        model.expression('exp_01'); // 笑顔
+        break;
+      case 'sad':
+        model.expression('exp_03'); // 悲しい
+        break;
+      case 'angry':
+        model.expression('exp_02'); // 怒り
+        break;
+      case 'surprised':
+        model.expression('exp_04'); // 驚き
+        break;
+      default:
+        model.expression('exp_01'); // デフォルト（笑顔）
+        break;
+    }
+  } catch (e) {
+    console.error('表情変更エラー:', e);
   }
 }
 
 // 初期化
 window.addEventListener('DOMContentLoaded', async () => {
-  await initLive2D();
-  setupChatUI();
+  console.log('ページ読み込み完了、初期化を開始します...');
   
-  // 初期メッセージをUIに追加
-  const chatLog = document.getElementById('chat-log');
-  const initialMessage = document.createElement('div');
-  initialMessage.classList.add('chat-message', 'ai-message');
-  initialMessage.textContent = 'こんにちは！どうぞお話ししましょう。';
-  chatLog.appendChild(initialMessage);
+  try {
+    // Live2Dの初期化
+    await initLive2D();
+    
+    // チャットUIの設定
+    setupChatUI();
+    
+    // 初期メッセージをUIに追加
+    const chatLog = document.getElementById('chat-log');
+    const initialMessage = document.createElement('div');
+    initialMessage.classList.add('chat-message', 'ai-message');
+    initialMessage.textContent = 'こんにちは！どうぞお話ししましょう。';
+    chatLog.appendChild(initialMessage);
+    
+    console.log('初期化が完了しました');
+  } catch (e) {
+    console.error('初期化エラー:', e);
+  }
 });
