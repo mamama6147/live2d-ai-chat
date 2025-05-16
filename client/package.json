@@ -1,0 +1,18 @@
+{
+  "name": "live2d-ai-chat-client",
+  "version": "0.1.0",
+  "description": "Live2D AI チャットアプリのフロントエンド",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "pixi-live2d-display": "^0.4.0",
+    "pixi.js": "^6.5.8"
+  },
+  "devDependencies": {
+    "vite": "^4.4.0"
+  }
+}
