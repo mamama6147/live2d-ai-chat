@@ -117,6 +117,9 @@ window.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(initialMessage);
       }
       
+      // リップシンクテストボタンの設定
+      setupTestControls();
+      
       showDebugInfo('初期化が完了しました');
       
       // ローディング表示を非表示
@@ -358,6 +361,23 @@ function testMouthMovement() {
 
 // 音声再生とリップシンク
 async function playVoice(audioUrl) {
+  // リップシンクモードの取得
+  const lipSyncModeSelect = document.getElementById('lip-sync-mode');
+  const lipSyncMode = lipSyncModeSelect ? lipSyncModeSelect.value : 'auto';
+  
+  // リップシンクモードがオフの場合
+  if (lipSyncMode === 'off') {
+    showDebugInfo('リップシンクはオフに設定されています');
+    return;
+  }
+  
+  // ダミーモードが指定された場合
+  if (lipSyncMode === 'dummy') {
+    showDebugInfo('ダミーリップシンクモードを使用します');
+    performDummyLipSync();
+    return;
+  }
+  
   // まず進行中のリップシンクを停止
   if (lipSyncInterval) {
     clearInterval(lipSyncInterval);
@@ -683,13 +703,18 @@ function setupChatUI() {
     try {
       showDebugInfo(`メッセージ送信: ${message}`);
       
+      // ボイスタイプの取得
+      const voiceTypeSelect = document.getElementById('voice-type');
+      const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'dummy:default';
+      showDebugInfo(`使用するボイスタイプ: ${voiceType}`);
+      
       // 実際のAPIを呼び出す
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, voiceType })
       });
 
       if (!response.ok) {
@@ -718,4 +743,43 @@ function setupChatUI() {
       addMessageToUI('ai', 'すみません、エラーが発生しました。もう一度お試しください。');
     }
   }
+}
+
+// テストコントロールのセットアップ
+function setupTestControls() {
+  const lipSyncTestButton = document.getElementById('lip-sync-test');
+  
+  if (!lipSyncTestButton) {
+    showDebugInfo('リップシンクテストボタンが見つかりません');
+    return;
+  }
+  
+  // リップシンクテストボタンのイベント
+  lipSyncTestButton.addEventListener('click', async () => {
+    showDebugInfo('リップシンクテストを実行します');
+    
+    try {
+      // テストAPIを呼び出す
+      const response = await fetch(`${API_BASE_URL}/api/lip-sync-test`);
+      
+      if (!response.ok) {
+        throw new Error(`テストAPIエラー: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // テストメッセージを表示
+      addMessageToUI('ai', `【テスト】 ${data.reply}`);
+      
+      // 音声再生とリップシンク
+      if (data.audioUrl) {
+        playVoice(data.audioUrl);
+      }
+      
+    } catch (error) {
+      showDebugInfo(`テストエラー: ${error.message}`);
+      console.error('リップシンクテストエラー:', error);
+      addMessageToUI('ai', '音声テストに失敗しました。サーバーが起動しているか確認してください。');
+    }
+  });
 }
