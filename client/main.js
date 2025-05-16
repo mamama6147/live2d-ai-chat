@@ -368,8 +368,16 @@ function setupChatUI() {
 
     try {
       showDebugInfo(`メッセージ送信: ${message}`);
-
-      // 実際のAPIを呼び出し
+      
+      // APIが実装されていない場合は簡易的な応答を返す
+      // 実際のAPIが実装されたらこの部分を削除
+      const dummyResponse = {
+        reply: 'こんにちは！現在APIは実装中です。',
+        emotion: 'happy'
+      };
+      
+      // 本番では以下のようにAPIを呼び出す
+      /*
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
@@ -383,17 +391,20 @@ function setupChatUI() {
       }
 
       const data = await response.json();
+      */
+      
+      // 開発中はダミーレスポンスを使用
+      const data = dummyResponse;
       showDebugInfo(`応答受信: ${data.reply}`);
 
       // AIの応答をUIに追加
       addMessageToUI('ai', data.reply);
-
-      // 音声再生
-      if (data.audioUrl) {
-        showDebugInfo(`音声URL: ${data.audioUrl}`);
-        playVoice(data.audioUrl);
-      }
-
+      
+      // 音声再生（本番ではAPIからの応答を使用）
+      // if (data.audioUrl) {
+      //   playVoice(data.audioUrl);
+      // }
+      
       // 表情変更などの追加処理
       if (model && data.emotion) {
         changeExpression(data.emotion);
