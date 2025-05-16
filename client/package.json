@@ -9,8 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@cubism/core": "^2.0.3",
-    "@cubism/model-json": "^2.0.3",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^6.5.8"
   },
