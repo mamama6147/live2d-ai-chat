@@ -1,8 +1,7 @@
 // Live2D表示とチャットの基本機能実装
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display';
-// Cubism SDKコアのインポート
-import '@cubism/core';
+// @cubism/coreの直接インポートは削除（CDNで読み込むため）
 
 // グローバル変数
 let app; // PIXIアプリケーション
