@@ -335,6 +335,81 @@ async function playVoice(audioUrl) {
   }
 }
 
+// メッセージをUIに追加する関数
+function addMessageToUI(role, text) {
+  const chatLog = document.getElementById('chat-log');
+  if (!chatLog) return;
+
+  const messageElement = document.createElement('div');
+  messageElement.classList.add('chat-message', `${role}-message`);
+  messageElement.textContent = text;
+  
+  chatLog.appendChild(messageElement);
+  
+  // スクロールを一番下に移動
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+// キャラクターの表情を変更する関数
+function changeExpression(emotion) {
+  if (!model) return;
+  
+  showDebugInfo(`表情変更: ${emotion}`);
+  
+  try {
+    // 感情に基づいて表情パラメータを設定
+    switch (emotion) {
+      case 'happy':
+        // 喜びの表情 - モデルのパラメータに依存
+        if (model.internalModel && model.internalModel.coreModel) {
+          model.internalModel.coreModel.setParameterValueById('ParamEyeLSmile', 1);
+          model.internalModel.coreModel.setParameterValueById('ParamEyeRSmile', 1);
+          model.internalModel.coreModel.setParameterValueById('ParamMouthForm', 1); // 口角上げ
+        }
+        break;
+      case 'sad':
+        // 悲しみの表情
+        if (model.internalModel && model.internalModel.coreModel) {
+          model.internalModel.coreModel.setParameterValueById('ParamBrowLY', -1);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowRY', -1);
+          model.internalModel.coreModel.setParameterValueById('ParamMouthForm', -1);
+        }
+        break;
+      case 'angry':
+        // 怒りの表情
+        if (model.internalModel && model.internalModel.coreModel) {
+          model.internalModel.coreModel.setParameterValueById('ParamBrowLAngle', -1);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowRAngle', -1);
+          model.internalModel.coreModel.setParameterValueById('ParamEyeLOpen', 0.8);
+          model.internalModel.coreModel.setParameterValueById('ParamEyeROpen', 0.8);
+        }
+        break;
+      case 'surprised':
+        // 驚きの表情
+        if (model.internalModel && model.internalModel.coreModel) {
+          model.internalModel.coreModel.setParameterValueById('ParamBrowLY', 1);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowRY', 1);
+          model.internalModel.coreModel.setParameterValueById('ParamEyeLOpen', 1.2);
+          model.internalModel.coreModel.setParameterValueById('ParamEyeROpen', 1.2);
+        }
+        break;
+      default:
+        // 通常表情 (neutral)
+        if (model.internalModel && model.internalModel.coreModel) {
+          model.internalModel.coreModel.setParameterValueById('ParamEyeLSmile', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamEyeRSmile', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowLY', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowRY', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowLAngle', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamBrowRAngle', 0);
+          model.internalModel.coreModel.setParameterValueById('ParamMouthForm', 0);
+        }
+    }
+  } catch (e) {
+    showDebugInfo(`表情変更エラー: ${e.message}`);
+  }
+}
+
 // チャットUIのセットアップ
 function setupChatUI() {
   const userInput = document.getElementById('user-input');
@@ -369,15 +444,7 @@ function setupChatUI() {
     try {
       showDebugInfo(`メッセージ送信: ${message}`);
       
-      // APIが実装されていない場合は簡易的な応答を返す
-      // 実際のAPIが実装されたらこの部分を削除
-      const dummyResponse = {
-        reply: 'こんにちは！現在APIは実装中です。',
-        emotion: 'happy'
-      };
-      
-      // 本番では以下のようにAPIを呼び出す
-      /*
+      // 実際のAPIを呼び出す
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
@@ -391,19 +458,15 @@ function setupChatUI() {
       }
 
       const data = await response.json();
-      */
-      
-      // 開発中はダミーレスポンスを使用
-      const data = dummyResponse;
       showDebugInfo(`応答受信: ${data.reply}`);
 
       // AIの応答をUIに追加
       addMessageToUI('ai', data.reply);
       
-      // 音声再生（本番ではAPIからの応答を使用）
-      // if (data.audioUrl) {
-      //   playVoice(data.audioUrl);
-      // }
+      // 音声再生
+      if (data.audioUrl) {
+        playVoice(data.audioUrl);
+      }
       
       // 表情変更などの追加処理
       if (model && data.emotion) {
