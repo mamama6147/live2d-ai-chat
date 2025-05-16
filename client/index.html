@@ -6,17 +6,30 @@
   <title>Live2D AI Chat</title>
   <link rel="stylesheet" href="./style.css">
   
-  <!-- Cubism Web Framework と Core のインポート -->
-  <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
-  <script src="https://cubism.live2d.com/sdk-web/cubism4/live2dcubismframework.min.js"></script>
+  <!-- Cubism Core とフレームワーク（ローカルファイル） -->
+  <!-- ダウンロードしたSDKからコピーしたファイルを使用 -->
+  <script src="./libs/live2d/core/live2dcubismcore.min.js"></script>
+  <script src="./libs/live2d/framework/live2dcubismframework.js"></script>
+  
+  <!-- PIXI.js（CDN） -->
   <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.8/dist/browser/pixi.min.js"></script>
+  
+  <!-- pixi-live2d-display（CDN） -->
   <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js"></script>
+  
+  <!-- Cubism 2ランタイム（必須） -->
+  <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/js/live2d.min.js"></script>
 </head>
 <body>
   <div class="app-container">
     <!-- Live2Dキャラクター表示領域 -->
     <div class="character-container">
       <canvas id="live2d-canvas"></canvas>
+      <!-- ローディングインジケーター -->
+      <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+        <p>読み込み中...</p>
+      </div>
     </div>
     
     <!-- チャットUI領域 -->
@@ -29,6 +42,9 @@
       </div>
     </div>
   </div>
+
+  <!-- デバッグ情報表示領域 -->
+  <div id="debug-info" style="position: fixed; bottom: 0; left: 0; background: rgba(0,0,0,0.7); color: white; padding: 5px; font-size: 12px; max-width: 50%; max-height: 150px; overflow: auto; display: none;"></div>
 
   <script type="module" src="./main.js"></script>
 </body>
