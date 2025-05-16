@@ -1,7 +1,6 @@
 // Live2D表示とチャットの基本機能実装
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display';
-// @cubism/coreの直接インポートは削除（CDNで読み込むため）
 
 // グローバル変数
 let app; // PIXIアプリケーション
@@ -12,6 +11,42 @@ let audioSource; // 現在の音声ソース
 // APIのベースURL - 開発環境と本番環境を考慮
 const API_BASE_URL = 'http://localhost:3000';
 
+// デバッグモード設定
+const DEBUG_MODE = true;
+
+// ウィンドウの読み込みを待ってから初期化
+window.addEventListener('DOMContentLoaded', async () => {
+  // グローバルオブジェクトの確認（デバッグ用）
+  if (DEBUG_MODE) {
+    console.log('===== 初期化開始 =====');
+    console.log('window.live2d:', window.live2d);
+    console.log('window.Live2DCubismCore:', window.Live2DCubismCore);
+    console.log('PIXI:', PIXI);
+    console.log('Live2DModel:', Live2DModel);
+  }
+  
+  try {
+    // Live2Dの初期化
+    await initLive2D();
+    
+    // チャットUIの設定
+    setupChatUI();
+    
+    // 初期メッセージをUIに追加
+    const chatLog = document.getElementById('chat-log');
+    if (chatLog) {
+      const initialMessage = document.createElement('div');
+      initialMessage.classList.add('chat-message', 'ai-message');
+      initialMessage.textContent = 'こんにちは！どうぞお話ししましょう。';
+      chatLog.appendChild(initialMessage);
+    }
+    
+    console.log('初期化が完了しました');
+  } catch (e) {
+    console.error('初期化エラー:', e);
+  }
+});
+
 // Live2D初期化
 async function initLive2D() {
   console.log('Live2D初期化を開始します...');
@@ -19,11 +54,13 @@ async function initLive2D() {
   // Cubism系のランタイム初期化確認
   if (!window.Live2DCubismCore) {
     console.error('Live2DCubismCoreが見つかりません');
+    alert('Live2DCubismCoreが見つかりません。ページを再読み込みしてください。');
     return;
   }
   
   if (!window.live2d) {
     console.error('live2d (Cubism 2ランタイム) が見つかりません');
+    alert('live2d (Cubism 2ランタイム) が見つかりません。ページを再読み込みしてください。');
     return;
   }
   
@@ -47,25 +84,29 @@ async function initLive2D() {
 
   // Live2D SDKの初期化
   try {
-    // 明示的にCubism 2とCubism 4の両方を初期化
+    // グローバル変数を設定
     window.PIXI = PIXI;
+    
+    // PIXIティッカーを登録
     Live2DModel.registerTicker(PIXI.Ticker);
     
-    // PIXI-Live2D-Displayの設定
-    const options = {
-      cubism4: true, // Cubism 4サポートを有効
-      cubism2: true, // Cubism 2サポートも有効
-      motionPreload: 'none'
-    };
+    // 明示的にCubism2を有効化
+    (Live2DModel.prototype)._cubism2 = window.live2d;
     
-    // グローバル設定の適用
-    for (const [key, value] of Object.entries(options)) {
-      Live2DModel.setConfig(key, value);
-    }
+    // PIXI-Live2D-Displayの設定
+    Live2DModel.setConfig({
+      cubism4: true,
+      cubism2: true,
+      motionPreload: 'none',
+      idleMotionFadingDuration: 2000,
+      idleMotionFadingFunction: 'linear'
+    });
     
     console.log('Live2Dフレームワーク初期化完了');
   } catch (e) {
     console.error('Live2Dフレームワーク初期化エラー:', e);
+    alert('Live2Dフレームワークの初期化に失敗しました: ' + e.message);
+    return;
   }
 
   // Live2DモデルのPATHを設定
@@ -82,6 +123,9 @@ async function initLive2D() {
       motionPreload: 'none', // モーション事前読み込みなし
       cubism4: true // Cubism 4を明示的に指定
     };
+    
+    // メインスレッドをブロックしないように読み込み処理を少し遅延
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     model = await Live2DModel.from(modelPath, modelLoadOptions);
     console.log('Live2Dモデルの読み込みに成功しました');
@@ -220,6 +264,12 @@ function setupChatUI() {
   const sendButton = document.getElementById('send-button');
   const chatLog = document.getElementById('chat-log');
   
+  // 要素が見つからない場合はエラー
+  if (!userInput || !sendButton || !chatLog) {
+    console.error('チャットUI要素が見つかりません');
+    return;
+  }
+  
   // 送信ボタンのクリックイベント
   sendButton.addEventListener('click', () => sendMessage());
   
@@ -321,27 +371,3 @@ function changeExpression(emotion) {
     console.error('表情変更エラー:', e);
   }
 }
-
-// 初期化
-window.addEventListener('DOMContentLoaded', async () => {
-  console.log('ページ読み込み完了、初期化を開始します...');
-  
-  try {
-    // Live2Dの初期化
-    await initLive2D();
-    
-    // チャットUIの設定
-    setupChatUI();
-    
-    // 初期メッセージをUIに追加
-    const chatLog = document.getElementById('chat-log');
-    const initialMessage = document.createElement('div');
-    initialMessage.classList.add('chat-message', 'ai-message');
-    initialMessage.textContent = 'こんにちは！どうぞお話ししましょう。';
-    chatLog.appendChild(initialMessage);
-    
-    console.log('初期化が完了しました');
-  } catch (e) {
-    console.error('初期化エラー:', e);
-  }
-});
