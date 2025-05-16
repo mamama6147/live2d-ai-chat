@@ -16,9 +16,18 @@ const API_BASE_URL = 'http://localhost:3000';
 async function initLive2D() {
   console.log('Live2D初期化を開始します...');
   
-  // Cubism 4の初期化設定
-  // PIXIでのポリフィル設定（ライブラリがCubism 2を探さないようにする）
-  window.Live2DCubismCore = window.Live2DCubismCore || {};
+  // Cubism系のランタイム初期化確認
+  if (!window.Live2DCubismCore) {
+    console.error('Live2DCubismCoreが見つかりません');
+    return;
+  }
+  
+  if (!window.live2d) {
+    console.error('live2d (Cubism 2ランタイム) が見つかりません');
+    return;
+  }
+  
+  console.log('Live2D Cubismコアとランタイムを確認しました');
   
   // PIXIアプリケーションの設定
   const canvas = document.getElementById('live2d-canvas');
@@ -38,11 +47,21 @@ async function initLive2D() {
 
   // Live2D SDKの初期化
   try {
-    // Cubism 4モデルをロードするための設定
+    // 明示的にCubism 2とCubism 4の両方を初期化
+    window.PIXI = PIXI;
     Live2DModel.registerTicker(PIXI.Ticker);
     
-    // フレームワークの明示的な指定
-    window.PIXI = PIXI;
+    // PIXI-Live2D-Displayの設定
+    const options = {
+      cubism4: true, // Cubism 4サポートを有効
+      cubism2: true, // Cubism 2サポートも有効
+      motionPreload: 'none'
+    };
+    
+    // グローバル設定の適用
+    for (const [key, value] of Object.entries(options)) {
+      Live2DModel.setConfig(key, value);
+    }
     
     console.log('Live2Dフレームワーク初期化完了');
   } catch (e) {
