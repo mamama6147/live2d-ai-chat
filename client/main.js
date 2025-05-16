@@ -1,6 +1,6 @@
 // Live2D表示とチャットの基本機能実装
-// import * as PIXI from 'pixi.js';
-// import { Live2DModel } from 'pixi-live2d-display';
+import * as PIXI from 'pixi.js';
+import { Live2DModel } from 'pixi-live2d-display';
 
 // グローバル変数
 let app; // PIXIアプリケーション
@@ -12,7 +12,6 @@ let audioSource; // 現在の音声ソース
 async function initLive2D() {
   // PIXIアプリケーションの設定
   const canvas = document.getElementById('live2d-canvas');
-  /*
   app = new PIXI.Application({
     view: canvas,
     autoStart: true,
@@ -20,15 +19,12 @@ async function initLive2D() {
     backgroundColor: 0xffffff,
     resizeTo: canvas.parentElement
   });
-  */
 
   // Live2DモデルのPATHを設定 - サンプルモデルまたは自作モデルを指定
-  // const modelPath = './models/haru/haru_greeter_t03.model3.json'; // サンプル用のパス
-  // TODO: 実際のモデルパスに更新してください
+  const modelPath = './models/nijiroumao/mao_pro.model3.json'; // 虹色まおモデルのパス
 
   try {
-    // モデルの読み込み (コメントアウト - 実際のモデルが配置されたら有効化)
-    /* 
+    // モデルの読み込み
     model = await Live2DModel.from(modelPath, { autoInteract: false });
     
     // モデルのサイズとポジションを調整
@@ -54,9 +50,8 @@ async function initLive2D() {
     if (model.internalModel.motionManager.definitions.idle) {
       model.motion('idle');
     }
-    */
     
-    console.log('Live2D初期化待機中 - モデルが配置されたらコードを有効化してください');
+    console.log('Live2Dモデルの読み込みに成功しました');
   } catch (e) {
     console.error('Live2Dモデルの読み込みに失敗しました:', e);
   }
@@ -114,7 +109,7 @@ async function playVoice(audioUrl) {
       
       // Live2Dモデルのパラメータに適用
       // 注: 実際のパラメータ名はモデルによって異なります
-      // model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
+      model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
       
       if (audioSource.buffer) {
         requestAnimationFrame(animateMouth);
@@ -128,7 +123,7 @@ async function playVoice(audioUrl) {
       audioSource = null;
       // モデルの口を閉じる
       if (model) {
-        // model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+        model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
       }
     };
     
@@ -215,19 +210,19 @@ function changeExpression(emotion) {
   // 注: 実際の表情名はモデルによって異なります
   switch (emotion) {
     case 'happy':
-      // model.expression('happy');
+      model.expression('Smile');
       break;
     case 'sad':
-      // model.expression('sad');
+      model.expression('Cry');
       break;
     case 'angry':
-      // model.expression('angry');
+      model.expression('Angry');
       break;
     case 'surprised':
-      // model.expression('surprised');
+      model.expression('Surprised');
       break;
     default:
-      // model.expression('neutral');
+      model.expression('Normal');
       break;
   }
 }
