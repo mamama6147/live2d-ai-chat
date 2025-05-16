@@ -1,6 +1,8 @@
 // Live2D表示とチャットの基本機能実装
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display';
+// Cubism SDKコアのインポート
+import '@cubism/core';
 
 // グローバル変数
 let app; // PIXIアプリケーション
@@ -14,6 +16,10 @@ const API_BASE_URL = 'http://localhost:3000';
 // Live2D初期化
 async function initLive2D() {
   console.log('Live2D初期化を開始します...');
+  
+  // Cubism 4の初期化設定
+  // PIXIでのポリフィル設定（ライブラリがCubism 2を探さないようにする）
+  window.Live2DCubismCore = window.Live2DCubismCore || {};
   
   // PIXIアプリケーションの設定
   const canvas = document.getElementById('live2d-canvas');
@@ -32,10 +38,16 @@ async function initLive2D() {
   });
 
   // Live2D SDKの初期化
-  // PIXI.Tickerの登録（物理演算などのアニメーション用）
-  if (!Live2DModel.isModelSettingLoaded) {
-    PIXI.utils.skipHello();
+  try {
+    // Cubism 4モデルをロードするための設定
     Live2DModel.registerTicker(PIXI.Ticker);
+    
+    // フレームワークの明示的な指定
+    window.PIXI = PIXI;
+    
+    console.log('Live2Dフレームワーク初期化完了');
+  } catch (e) {
+    console.error('Live2Dフレームワーク初期化エラー:', e);
   }
 
   // Live2DモデルのPATHを設定
@@ -45,7 +57,15 @@ async function initLive2D() {
   try {
     // モデルの読み込み
     console.log('Live2Dモデルの読み込みを開始します...');
-    model = await Live2DModel.from(modelPath, { autoInteract: false });
+    
+    // モデルロードオプションの設定
+    const modelLoadOptions = {
+      autoInteract: false,
+      motionPreload: 'none', // モーション事前読み込みなし
+      cubism4: true // Cubism 4を明示的に指定
+    };
+    
+    model = await Live2DModel.from(modelPath, modelLoadOptions);
     console.log('Live2Dモデルの読み込みに成功しました');
     
     // モデルのサイズとポジションを調整
@@ -68,7 +88,7 @@ async function initLive2D() {
     });
     
     // 開始時のモーション再生
-    if (model.internalModel.motionManager.definitions.idle) {
+    if (model.internalModel && model.internalModel.motionManager && model.internalModel.motionManager.definitions.idle) {
       model.motion('idle');
     }
     
@@ -141,9 +161,11 @@ async function playVoice(audioUrl) {
       // LipSyncグループが定義されているので適切なパラメータを使用
       try {
         // 複数の可能性を試す
-        model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
-        // ParamAはLipSyncグループに含まれている可能性がある
-        model.internalModel.coreModel.setParameterValueById('ParamA', mouthOpenValue);
+        if (model.internalModel && model.internalModel.coreModel) {
+          model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
+          // ParamAはLipSyncグループに含まれている可能性がある
+          model.internalModel.coreModel.setParameterValueById('ParamA', mouthOpenValue);
+        }
       } catch (e) {
         // エラーが発生しても無視（存在しないパラメータの場合）
       }
@@ -159,7 +181,7 @@ async function playVoice(audioUrl) {
     audioSource.onended = () => {
       audioSource = null;
       // モデルの口を閉じる
-      if (model) {
+      if (model && model.internalModel && model.internalModel.coreModel) {
         try {
           model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
           model.internalModel.coreModel.setParameterValueById('ParamA', 0);
