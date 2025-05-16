@@ -1,7 +1,6 @@
 // Live2D表示とチャットの基本機能実装
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display';
-// @cubism/coreの直接インポートは削除（CDNで読み込むため）
 
 // グローバル変数
 let app; // PIXIアプリケーション
@@ -15,10 +14,6 @@ const API_BASE_URL = 'http://localhost:3000';
 // Live2D初期化
 async function initLive2D() {
   console.log('Live2D初期化を開始します...');
-  
-  // Cubism 4の初期化設定
-  // PIXIでのポリフィル設定（ライブラリがCubism 2を探さないようにする）
-  window.Live2DCubismCore = window.Live2DCubismCore || {};
   
   // PIXIアプリケーションの設定
   const canvas = document.getElementById('live2d-canvas');
@@ -38,11 +33,25 @@ async function initLive2D() {
 
   // Live2D SDKの初期化
   try {
+    // グローバルオブジェクトの設定を確認
+    console.log('Cubism 2ランタイム: ', window.Live2D ? 'ロード済み' : '未ロード');
+    console.log('Cubism 4ランタイム: ', window.Live2DCubismCore ? 'ロード済み' : '未ロード');
+    
+    // Live2DとPIXIのグローバル参照を確保
+    window.PIXI = PIXI;
+    
+    // pixi-live2d-displayの初期化と設定
     // Cubism 4モデルをロードするための設定
     Live2DModel.registerTicker(PIXI.Ticker);
     
-    // フレームワークの明示的な指定
-    window.PIXI = PIXI;
+    // モデルタイプを明示的に指定
+    if (Live2DModel.prototype) {
+      Live2DModel.prototype.defaultConfig = {
+        ...Live2DModel.prototype.defaultConfig,
+        cubism2: false,  // Cubism 2モデルは使わない
+        cubism4: true    // Cubism 4モデルを使う
+      };
+    }
     
     console.log('Live2Dフレームワーク初期化完了');
   } catch (e) {
@@ -61,9 +70,22 @@ async function initLive2D() {
     const modelLoadOptions = {
       autoInteract: false,
       motionPreload: 'none', // モーション事前読み込みなし
-      cubism4: true // Cubism 4を明示的に指定
+      cubism4: true,         // Cubism 4モデルを明示的に指定
+      cubism2: false         // Cubism 2モデルを使わない
     };
     
+    // モデルの読み込み前にライブラリが初期化されているか確認
+    if (!window.Live2D) {
+      console.error('Live2D.min.jsが読み込まれていません');
+      throw new Error('Live2D.min.jsが読み込まれていません');
+    }
+    
+    if (!window.Live2DCubismCore) {
+      console.error('Live2DCubismCore.js が読み込まれていません');
+      throw new Error('Live2DCubismCore.js が読み込まれていません');
+    }
+    
+    // モデルの読み込み
     model = await Live2DModel.from(modelPath, modelLoadOptions);
     console.log('Live2Dモデルの読み込みに成功しました');
     
@@ -87,7 +109,7 @@ async function initLive2D() {
     });
     
     // 開始時のモーション再生
-    if (model.internalModel && model.internalModel.motionManager && model.internalModel.motionManager.definitions.idle) {
+    if (model.internalModel && model.internalModel.motionManager && model.internalModel.motionManager.definitions && model.internalModel.motionManager.definitions.idle) {
       model.motion('idle');
     }
     
