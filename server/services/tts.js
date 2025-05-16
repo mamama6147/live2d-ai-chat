@@ -25,7 +25,7 @@ if (!fs.existsSync(AUDIO_DIR)) {
  */
 export async function textToSpeech(text) {
   // どのTTSサービスを使用するか設定から判断
-  const ttsService = process.env.TTS_SERVICE || 'azure'; // 'azure', 'google', 'voicevox'など
+  const ttsService = process.env.TTS_SERVICE || 'dummy'; // 'azure', 'google', 'voicevox', 'dummy'など
   
   try {
     switch (ttsService.toLowerCase()) {
@@ -33,14 +33,39 @@ export async function textToSpeech(text) {
         return await azureTTS(text);
       case 'voicevox':
         return await voicevoxTTS(text);
+      case 'dummy':
+        // デモ用のダミーモード
+        return await dummyTTS(text);
       default:
-        // デモ用にダミーの音声ファイルを返す
+        // 未知のサービスの場合もダミーモードを使用
         console.log('TTSサービスが設定されていません。ダミー音声を使用します。');
-        return 'dummy.mp3'; // 実際には作成済みのダミー音声ファイルを用意しておく
+        return await dummyTTS(text);
     }
   } catch (error) {
     console.error('音声合成エラー:', error);
     return 'error.mp3'; // エラー時のダミー音声ファイル
+  }
+}
+
+/**
+ * デモ用のダミー音声生成
+ * @param {string} text - 読み上げるテキスト（実際には使用しません）
+ * @returns {Promise<string>} 生成された音声ファイル名
+ */
+async function dummyTTS(text) {
+  // ダミー音声ファイル名を生成
+  const filename = `dummy_${Date.now()}.mp3`;
+  const outputPath = path.join(AUDIO_DIR, filename);
+  
+  try {
+    // ダミー音声ファイルを作成（実際には空ファイル）
+    fs.writeFileSync(outputPath, '');
+    
+    console.log(`ダミー音声ファイルを作成しました: ${filename}`);
+    return filename;
+  } catch (error) {
+    console.error('ダミー音声ファイル作成エラー:', error);
+    throw error;
   }
 }
 
