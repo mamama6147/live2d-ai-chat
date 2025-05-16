@@ -16,17 +16,37 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ミドルウェアの設定
-app.use(cors());
+// CORSの設定 - 開発環境では全てのオリジンを許可
+app.use(cors({
+  origin: '*', // 開発環境では全てのオリジンを許可
+  methods: ['GET', 'POST'], // 許可するHTTPメソッド
+  allowedHeaders: ['Content-Type', 'Authorization'] // 許可するヘッダー
+}));
+
+// JSONボディ解析
 app.use(express.json());
+
+// 静的ファイルの配信
 app.use(express.static(path.join(__dirname, '../client')));
 
 // 音声ファイル保存用の静的ディレクトリ
 app.use('/audio', express.static(path.join(__dirname, 'audio')));
 
+// ルートへのアクセス - クライアントのindex.htmlを返す
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/index.html'));
+});
+
+// APIのテスト用エンドポイント
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'APIサーバーが正常に動作しています' });
+});
+
 // チャットAPIエンドポイント
 app.post('/api/chat', async (req, res) => {
   try {
+    console.log('APIリクエスト受信:', req.body);
+    
     const { message } = req.body;
     
     // メッセージが空の場合
@@ -47,12 +67,17 @@ app.post('/api/chat', async (req, res) => {
     const audioFilename = await textToSpeech(aiReply);
     const audioUrl = `/audio/${audioFilename}`;
     
-    // 応答を返す
-    res.json({
+    // 応答データの作成
+    const responseData = {
       reply: aiReply,
       audioUrl,
       emotion
-    });
+    };
+    
+    console.log('APIレスポンス送信:', responseData);
+    
+    // 応答を返す
+    res.json(responseData);
     
   } catch (error) {
     console.error('APIエラー:', error);
