@@ -6,20 +6,20 @@
   <title>Live2D AI Chat</title>
   <link rel="stylesheet" href="./style.css">
   
-  <!-- 正しい順序でのCubismライブラリ読み込み -->
-  <!-- 1) Live2D Core (Cubism 4) - 最初に読み込む必要があります -->
+  <!-- Live2D Cubism ライブラリ (正しい読み込み順序) -->
+  <!-- 1. Cubism Core - 最初に読み込む必要があります -->
   <script src="./public/libs/live2d/core/live2dcubismcore.min.js"></script>
   
-  <!-- 2) PixiJS v6 -->
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@6/dist/browser/pixi.min.js"></script>
+  <!-- 2. PixiJS -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.8/dist/browser/pixi.min.js"></script>
   
-  <!-- 3) Live2D Legacy (Cubism 2.1) -->
-  <script src="./public/libs/live2d.min.js"></script>
-  
-  <!-- 4) Cubism Framework - Coreの後に読み込む -->
+  <!-- 3. Cubism Framework -->
   <script src="./public/libs/live2d/framework/live2dcubismframework.js"></script>
   
-  <!-- 5) pixi-live2d-display - 最後に読み込む -->
+  <!-- 4. Live2D 古いバージョンも読み込み -->
+  <script src="./public/libs/live2d.min.js"></script>
+  
+  <!-- 5. pixi-live2d-display - これは最後に読み込む -->
   <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
 </head>
 <body>
