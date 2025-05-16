@@ -47,7 +47,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     console.log('APIリクエスト受信:', req.body);
     
-    const { message } = req.body;
+    const { message, voiceType } = req.body;
     
     // メッセージが空の場合
     if (!message || message.trim() === '') {
@@ -63,15 +63,20 @@ app.post('/api/chat', async (req, res) => {
     // 簡易的な感情分析
     const emotion = analyzeEmotion(aiReply);
     
-    // テキスト読み上げによる音声生成
-    const audioFilename = await textToSpeech(aiReply);
+    // ボイスタイプを解析
+    const voiceOptions = parseVoiceType(voiceType);
+    console.log('音声設定:', voiceOptions);
+    
+    // テキスト読み上げによる音声生成（ボイスタイプを指定）
+    const audioFilename = await textToSpeech(aiReply, voiceOptions);
     const audioUrl = `/audio/${audioFilename}`;
     
     // 応答データの作成
     const responseData = {
       reply: aiReply,
       audioUrl,
-      emotion
+      emotion,
+      voiceType // 応答に使用したボイスタイプを含める
     };
     
     console.log('APIレスポンス送信:', responseData);
@@ -84,6 +89,51 @@ app.post('/api/chat', async (req, res) => {
     res.status(500).json({ error: 'サーバーエラーが発生しました', details: error.message });
   }
 });
+
+// リップシンクテスト用エンドポイント
+app.get('/api/lip-sync-test', async (req, res) => {
+  try {
+    // テスト用の音声ファイルを生成
+    const testText = 'これはリップシンクのテストです。口の動きがうまく同期しているかを確認してください。';
+    
+    // ダミー音声で応答
+    const audioFilename = await textToSpeech(testText, { service: 'dummy' });
+    const audioUrl = `/audio/${audioFilename}`;
+    
+    // 応答データの作成
+    const responseData = {
+      reply: testText,
+      audioUrl,
+      emotion: 'neutral',
+      isTest: true
+    };
+    
+    // 応答を返す
+    res.json(responseData);
+    
+  } catch (error) {
+    console.error('テストAPIエラー:', error);
+    res.status(500).json({ error: 'テスト実行中にエラーが発生しました', details: error.message });
+  }
+});
+
+// ボイスタイプを解析して設定オブジェクトに変換する関数
+function parseVoiceType(voiceType) {
+  if (!voiceType) {
+    return {}; // デフォルト設定
+  }
+  
+  // voiceType は "service:voice" 形式を想定
+  const parts = voiceType.split(':');
+  if (parts.length < 2) {
+    return {}; // 形式が不正
+  }
+  
+  const service = parts[0];
+  const voice = parts[1];
+  
+  return { service, voice };
+}
 
 // 簡易的な感情分析
 function analyzeEmotion(text) {

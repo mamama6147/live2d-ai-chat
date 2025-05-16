@@ -5,6 +5,7 @@ let app; // PIXIアプリケーション
 let model; // Live2Dモデル
 let audioContext; // Web Audio Context
 let audioSource; // 現在の音声ソース
+let lipSyncInterval = null; // リップシンクタイマー
 
 // APIのベースURL
 const API_BASE_URL = 'http://localhost:3000';
@@ -116,6 +117,9 @@ window.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(initialMessage);
       }
       
+      // リップシンクテストボタンの設定
+      setupTestControls();
+      
       showDebugInfo('初期化が完了しました');
       
       // ローディング表示を非表示
@@ -194,6 +198,24 @@ async function initLive2D() {
           model = loadedModel;
           showDebugInfo('Live2Dモデルの読み込みに成功しました');
           
+          // モデルのパラメータをログに出力（デバッグ用）
+          if (model.internalModel && model.internalModel.coreModel) {
+            try {
+              // 利用可能なパラメータの数を取得
+              const parameterCount = model.internalModel.coreModel.getParameterCount();
+              showDebugInfo(`モデルの利用可能なパラメータ数: ${parameterCount}`);
+              
+              // サンプルパラメータ名の表示
+              for (let i = 0; i < Math.min(parameterCount, 10); i++) {
+                const paramId = model.internalModel.coreModel.getParameterId(i);
+                const paramValue = model.internalModel.coreModel.getParameterValue(i);
+                showDebugInfo(`パラメータ[${i}]: ${paramId} = ${paramValue}`);
+              }
+            } catch (e) {
+              showDebugInfo(`パラメータ取得エラー: ${e.message}`);
+            }
+          }
+          
           // モデルのサイズとポジションを調整
           const parentWidth = canvas.parentElement.clientWidth;
           const parentHeight = canvas.parentElement.clientHeight;
@@ -225,6 +247,9 @@ async function initLive2D() {
           }
           
           showDebugInfo('Live2Dモデルの表示に成功しました');
+          
+          // 口パクテスト
+          testMouthMovement();
         })
         .catch(e => {
           showDebugInfo(`Live2Dモデルの読み込みに失敗: ${e.message}`);
@@ -241,13 +266,137 @@ async function initLive2D() {
   }
 }
 
+// 口の動きをテストする関数
+function testMouthMovement() {
+  if (!model) {
+    showDebugInfo('モデルが読み込まれていないため、口パクテストができません');
+    return;
+  }
+  
+  showDebugInfo('口パクテストを開始します');
+  
+  // 口パク用のパラメータ候補
+  const mouthParams = [
+    'ParamMouthOpenY',        // 一般的な口開きパラメータ
+    'PARAM_MOUTH_OPEN_Y',     // 別の形式
+    'ParamMouthOpen',         // 別の命名規則
+    'PARAM_MOUTH_OPEN',
+    'Param_mouth_open_y',
+    'ParamMouthForm',         // 口の形状
+    'PARAM_MOUTH_FORM'
+  ];
+  
+  // 各パラメータが存在するか確認
+  mouthParams.forEach(param => {
+    try {
+      if (model.internalModel && model.internalModel.coreModel) {
+        // パラメータIDからインデックスを探す
+        const paramExists = model.internalModel.coreModel.getParameterValueById(param);
+        showDebugInfo(`口パクパラメータチェック: ${param} - ${paramExists !== undefined ? '存在します' : '存在しません'}`);
+      }
+    } catch (e) {
+      showDebugInfo(`パラメータ ${param} の確認でエラー: ${e.message}`);
+    }
+  });
+  
+  // 口パクテスト動作を開始
+  let mouthOpenValue = 0;
+  let direction = 0.1;
+  
+  // 既存のタイマーがあれば停止
+  if (lipSyncInterval) {
+    clearInterval(lipSyncInterval);
+  }
+  
+  // 口の開閉をアニメーションするタイマー
+  lipSyncInterval = setInterval(() => {
+    mouthOpenValue += direction;
+    
+    // 方向転換
+    if (mouthOpenValue >= 1) {
+      mouthOpenValue = 1;
+      direction = -0.1;
+    } else if (mouthOpenValue <= 0) {
+      mouthOpenValue = 0;
+      direction = 0.1;
+    }
+    
+    // 各パラメータを試す
+    if (model && model.internalModel && model.internalModel.coreModel) {
+      try {
+        // 優先順位の高いパラメータから順に試す
+        mouthParams.forEach(param => {
+          try {
+            model.internalModel.coreModel.setParameterValueById(param, mouthOpenValue);
+          } catch (e) {
+            // このパラメータがなければスキップ
+          }
+        });
+      } catch (e) {
+        showDebugInfo(`口パク更新エラー: ${e.message}`);
+      }
+    }
+  }, 100);
+  
+  // 5秒後にテスト停止
+  setTimeout(() => {
+    if (lipSyncInterval) {
+      clearInterval(lipSyncInterval);
+      lipSyncInterval = null;
+      showDebugInfo('口パクテスト完了');
+      
+      // 口を閉じる
+      if (model && model.internalModel && model.internalModel.coreModel) {
+        mouthParams.forEach(param => {
+          try {
+            model.internalModel.coreModel.setParameterValueById(param, 0);
+          } catch (e) {
+            // このパラメータがなければスキップ
+          }
+        });
+      }
+    }
+  }, 5000);
+}
+
 // 音声再生とリップシンク
 async function playVoice(audioUrl) {
+  // リップシンクモードの取得
+  const lipSyncModeSelect = document.getElementById('lip-sync-mode');
+  const lipSyncMode = lipSyncModeSelect ? lipSyncModeSelect.value : 'auto';
+  
+  // リップシンクモードがオフの場合
+  if (lipSyncMode === 'off') {
+    showDebugInfo('リップシンクはオフに設定されています');
+    return;
+  }
+  
+  // ダミーモードが指定された場合
+  if (lipSyncMode === 'dummy') {
+    showDebugInfo('ダミーリップシンクモードを使用します');
+    performDummyLipSync();
+    return;
+  }
+  
+  // まず進行中のリップシンクを停止
+  if (lipSyncInterval) {
+    clearInterval(lipSyncInterval);
+    lipSyncInterval = null;
+  }
+  
+  // モデルがロードされていない場合
+  if (!model) {
+    showDebugInfo('モデルが読み込まれていないため、リップシンクできません');
+    return;
+  }
+
   if (!audioContext) {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) {
       showDebugInfo(`AudioContextの作成に失敗: ${e.message}`);
+      // AudioContextが作成できなくても、ダミーリップシンクは実行
+      performDummyLipSync();
       return;
     }
   }
@@ -264,74 +413,184 @@ async function playVoice(audioUrl) {
 
     // 音声データ取得
     const response = await fetch(fullAudioUrl);
-    const arrayBuffer = await response.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    // 音声再生
-    audioSource = audioContext.createBufferSource();
-    audioSource.buffer = audioBuffer;
     
-    // リップシンク用のAnalyserNodeを作成
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    audioSource.connect(analyser);
-    analyser.connect(audioContext.destination);
-    
-    // 再生開始
-    audioSource.start(0);
-    
-    // リップシンク処理
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    // リップシンク用のアニメーションフレーム
-    function animateMouth() {
-      if (!model) return;
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      // 音量の平均値を計算
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
-      }
-      const average = sum / bufferLength;
-      
-      // 音量に応じて口の開閉度を調整（0～1の範囲に正規化）
-      const mouthOpenValue = Math.min(average / 128, 1);
-      
-      // Live2Dモデルのパラメータに適用
-      try {
-        if (model.internalModel && model.internalModel.coreModel) {
-          model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenValue);
-        }
-      } catch (e) {
-        // エラーが発生しても無視（存在しないパラメータの場合）
-      }
-      
-      if (audioSource.buffer) {
-        requestAnimationFrame(animateMouth);
-      }
+    // レスポンスをチェック
+    if (!response.ok) {
+      showDebugInfo(`音声ファイル取得エラー: ${response.status} ${response.statusText}`);
+      performDummyLipSync();
+      return;
     }
     
-    animateMouth();
+    const arrayBuffer = await response.arrayBuffer();
     
-    // 音声終了時の処理
-    audioSource.onended = () => {
-      audioSource = null;
-      // モデルの口を閉じる
-      if (model && model.internalModel && model.internalModel.coreModel) {
-        try {
-          model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
-        } catch (e) {
-          // エラーが発生しても無視
+    // 空のファイルかチェック
+    if (arrayBuffer.byteLength === 0) {
+      showDebugInfo('空の音声ファイルが検出されました。ダミーリップシンクを使用します。');
+      performDummyLipSync();
+      return;
+    }
+    
+    try {
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // 音声再生
+      audioSource = audioContext.createBufferSource();
+      audioSource.buffer = audioBuffer;
+      
+      // リップシンク用のAnalyserNodeを作成
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      audioSource.connect(analyser);
+      analyser.connect(audioContext.destination);
+      
+      // 再生開始
+      audioSource.start(0);
+      
+      // リップシンク処理
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      // 前回の値を保持して滑らかに変化させる
+      let lastMouthOpenValue = 0;
+      const smoothingFactor = 0.3; // 値が小さいほどスムーズになる
+      
+      // リップシンク用のアニメーションフレーム
+      function animateMouth() {
+        if (!model) return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        
+        // 音量の平均値を計算
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        
+        // 音量に応じて口の開閉度を調整（感度を上げる）
+        const targetMouthValue = Math.min(average / 100, 1); // 感度調整
+        const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetMouthValue - lastMouthOpenValue);
+        lastMouthOpenValue = mouthOpenValue;
+        
+        // Live2Dモデルのパラメータに適用 - 複数のパラメータを試す
+        applyMouthOpenValue(mouthOpenValue);
+        
+        // 音声が再生中なら次のフレームをリクエスト
+        if (audioSource && audioSource.buffer) {
+          requestAnimationFrame(animateMouth);
         }
       }
-    };
+      
+      // アニメーション開始
+      animateMouth();
+      
+      // 音声終了時の処理
+      audioSource.onended = () => {
+        audioSource = null;
+        // モデルの口を閉じる
+        applyMouthOpenValue(0);
+      };
+      
+    } catch (decodeError) {
+      showDebugInfo(`音声デコードエラー: ${decodeError.message}. ダミーリップシンクを使用します。`);
+      performDummyLipSync();
+    }
     
   } catch (e) {
-    showDebugInfo(`音声再生に失敗: ${e.message}`);
+    showDebugInfo(`音声再生に失敗: ${e.message}. ダミーリップシンクを使用します。`);
     console.error('音声再生に失敗しました:', e);
+    performDummyLipSync();
+  }
+}
+
+// ダミーのリップシンク（音声ファイルがない場合やエラー時）
+function performDummyLipSync() {
+  showDebugInfo('ダミーリップシンクを開始します');
+  
+  // 口パク用パラメータ
+  const mouthParams = [
+    'ParamMouthOpenY',
+    'PARAM_MOUTH_OPEN_Y',
+    'ParamMouthOpen',
+    'PARAM_MOUTH_OPEN',
+    'Param_mouth_open_y'
+  ];
+  
+  // 前の値
+  let lastMouthOpenValue = 0;
+  
+  // スムージング係数
+  const smoothingFactor = 0.3;
+  
+  // 口の開閉を時間単位でシミュレートする値
+  let time = 0;
+  
+  // 既存のタイマーがあれば停止
+  if (lipSyncInterval) {
+    clearInterval(lipSyncInterval);
+  }
+  
+  // ランダムな口パクタイマー
+  lipSyncInterval = setInterval(() => {
+    time += 0.1;
+    
+    // サイン波に乱数を加えて不規則な動きにする
+    const noise = Math.random() * 0.3;
+    const rawValue = Math.abs(Math.sin(time * 5)) * 0.7 + noise;
+    const targetValue = Math.min(rawValue, 1);
+    
+    // スムージング処理
+    const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetValue - lastMouthOpenValue);
+    lastMouthOpenValue = mouthOpenValue;
+    
+    // パラメータ適用
+    applyMouthOpenValue(mouthOpenValue);
+    
+  }, 50); // 更新頻度
+  
+  // 5秒後に停止（実際の音声長に合わせる場合は調整）
+  setTimeout(() => {
+    if (lipSyncInterval) {
+      clearInterval(lipSyncInterval);
+      lipSyncInterval = null;
+      
+      // 口を閉じる
+      applyMouthOpenValue(0);
+      
+      showDebugInfo('ダミーリップシンク完了');
+    }
+  }, 5000);
+}
+
+// 口の開閉値を複数のパラメータに適用する関数
+function applyMouthOpenValue(value) {
+  if (!model || !model.internalModel || !model.internalModel.coreModel) return;
+  
+  // パラメータ候補リスト
+  const mouthParams = [
+    'ParamMouthOpenY',
+    'PARAM_MOUTH_OPEN_Y',
+    'ParamMouthOpen',
+    'PARAM_MOUTH_OPEN',
+    'Param_mouth_open_y'
+  ];
+  
+  // すべてのパラメータを試す
+  let applied = false;
+  mouthParams.forEach(param => {
+    try {
+      model.internalModel.coreModel.setParameterValueById(param, value);
+      applied = true;
+    } catch (e) {
+      // このパラメータがなければスキップ
+    }
+  });
+  
+  if (!applied) {
+    // デバッグモードでのみ表示
+    if (DEBUG_MODE && value > 0) {
+      showDebugInfo('口パクパラメータが適用できませんでした。モデルが互換性のあるパラメータを持っていない可能性があります。');
+    }
   }
 }
 
@@ -444,13 +703,18 @@ function setupChatUI() {
     try {
       showDebugInfo(`メッセージ送信: ${message}`);
       
+      // ボイスタイプの取得
+      const voiceTypeSelect = document.getElementById('voice-type');
+      const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'dummy:default';
+      showDebugInfo(`使用するボイスタイプ: ${voiceType}`);
+      
       // 実際のAPIを呼び出す
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, voiceType })
       });
 
       if (!response.ok) {
@@ -479,4 +743,43 @@ function setupChatUI() {
       addMessageToUI('ai', 'すみません、エラーが発生しました。もう一度お試しください。');
     }
   }
+}
+
+// テストコントロールのセットアップ
+function setupTestControls() {
+  const lipSyncTestButton = document.getElementById('lip-sync-test');
+  
+  if (!lipSyncTestButton) {
+    showDebugInfo('リップシンクテストボタンが見つかりません');
+    return;
+  }
+  
+  // リップシンクテストボタンのイベント
+  lipSyncTestButton.addEventListener('click', async () => {
+    showDebugInfo('リップシンクテストを実行します');
+    
+    try {
+      // テストAPIを呼び出す
+      const response = await fetch(`${API_BASE_URL}/api/lip-sync-test`);
+      
+      if (!response.ok) {
+        throw new Error(`テストAPIエラー: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // テストメッセージを表示
+      addMessageToUI('ai', `【テスト】 ${data.reply}`);
+      
+      // 音声再生とリップシンク
+      if (data.audioUrl) {
+        playVoice(data.audioUrl);
+      }
+      
+    } catch (error) {
+      showDebugInfo(`テストエラー: ${error.message}`);
+      console.error('リップシンクテストエラー:', error);
+      addMessageToUI('ai', '音声テストに失敗しました。サーバーが起動しているか確認してください。');
+    }
+  });
 }

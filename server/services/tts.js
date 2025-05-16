@@ -21,18 +21,26 @@ if (!fs.existsSync(AUDIO_DIR)) {
 /**
  * テキストを音声に変換する関数
  * @param {string} text - 読み上げるテキスト
+ * @param {Object} options - 音声オプション
+ * @param {string} options.service - 利用するTTSサービス ('azure', 'voicevox', 'dummy')
+ * @param {string} options.voice - 音声IDまたは名前
  * @returns {Promise<string>} 生成された音声ファイル名
  */
-export async function textToSpeech(text) {
+export async function textToSpeech(text, options = {}) {
+  // オプションから音声設定を取得
+  const { service, voice } = options;
+  
   // どのTTSサービスを使用するか設定から判断
-  const ttsService = process.env.TTS_SERVICE || 'dummy'; // 'azure', 'google', 'voicevox', 'dummy'など
+  const ttsService = service || process.env.TTS_SERVICE || 'dummy'; // 'azure', 'google', 'voicevox', 'dummy'など
   
   try {
+    console.log(`音声合成サービス: ${ttsService}, 音声: ${voice || 'デフォルト'}`);
+    
     switch (ttsService.toLowerCase()) {
       case 'azure':
-        return await azureTTS(text);
+        return await azureTTS(text, voice);
       case 'voicevox':
-        return await voicevoxTTS(text);
+        return await voicevoxTTS(text, voice);
       case 'dummy':
         // デモ用のダミーモード
         return await dummyTTS(text);
@@ -72,13 +80,17 @@ async function dummyTTS(text) {
 /**
  * Azure Cognitive ServicesのTTSを使用する関数
  * @param {string} text - 読み上げるテキスト
+ * @param {string} voiceName - Azureの音声名（例: ja-JP-NanamiNeural）
  * @returns {Promise<string>} 生成された音声ファイル名
  */
-async function azureTTS(text) {
+async function azureTTS(text, voiceName) {
   // APIキーが設定されていない場合はエラー
   if (!process.env.AZURE_TTS_KEY || !process.env.AZURE_TTS_REGION) {
     throw new Error('Azure TTS APIキーまたはリージョンが設定されていません');
   }
+  
+  // 音声名を設定（指定がなければ.envのデフォルト値を使用）
+  const voice = voiceName || process.env.AZURE_TTS_VOICE || 'ja-JP-NanamiNeural';
   
   // ファイル名の生成
   const filename = `azure_${Date.now()}.mp3`;
@@ -90,7 +102,7 @@ async function azureTTS(text) {
   // SSMLの構築
   const ssml = `
     <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ja-JP">
-      <voice name="${process.env.AZURE_TTS_VOICE || 'ja-JP-NanamiNeural'}">
+      <voice name="${voice}">
         ${text}
       </voice>
     </speak>
@@ -129,17 +141,20 @@ async function azureTTS(text) {
 /**
  * VOICEVOXを使用した音声合成関数
  * @param {string} text - 読み上げるテキスト
+ * @param {string} speakerId - 話者ID（例: "1"=四国めたん）
  * @returns {Promise<string>} 生成された音声ファイル名
  */
-async function voicevoxTTS(text) {
+async function voicevoxTTS(text, speakerId) {
   // VOICEVOXのエンドポイント
   const voicevoxEndpoint = process.env.VOICEVOX_ENDPOINT || 'http://localhost:50021';
-  const speakerId = process.env.VOICEVOX_SPEAKER_ID || '1'; // デフォルトのスピーカーID
+  
+  // 話者IDを設定（指定がなければ.envのデフォルト値を使用）
+  const speaker = speakerId || process.env.VOICEVOX_SPEAKER_ID || '1';
   
   try {
     // 1. テキストからクエリを作成
     const queryResponse = await fetch(
-      `${voicevoxEndpoint}/audio_query?text=${encodeURIComponent(text)}&speaker=${speakerId}`,
+      `${voicevoxEndpoint}/audio_query?text=${encodeURIComponent(text)}&speaker=${speaker}`,
       { method: 'POST' }
     );
     
@@ -151,7 +166,7 @@ async function voicevoxTTS(text) {
     
     // 2. 音声合成リクエスト
     const synthesisResponse = await fetch(
-      `${voicevoxEndpoint}/synthesis?speaker=${speakerId}`,
+      `${voicevoxEndpoint}/synthesis?speaker=${speaker}`,
       {
         method: 'POST',
         headers: {
