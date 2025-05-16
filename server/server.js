@@ -117,6 +117,46 @@ app.get('/api/lip-sync-test', async (req, res) => {
   }
 });
 
+// VOICEVOXテスト用エンドポイント
+app.get('/api/voicevox-test', async (req, res) => {
+  try {
+    // クエリからボイスIDを取得（デフォルトは1: 四国めたん）
+    const voiceId = req.query.voiceId || '1';
+    
+    // テスト用テキスト
+    const testText = 'これはVOICEVOXのテストです。私の声は聞こえていますか？';
+    
+    console.log(`VOICEVOXテスト実行: 話者ID=${voiceId}`);
+    
+    // VOICEVOX音声を生成
+    const audioFilename = await textToSpeech(testText, { 
+      service: 'voicevox',
+      voice: voiceId 
+    });
+    
+    const audioUrl = `/audio/${audioFilename}`;
+    
+    // 応答データの作成
+    const responseData = {
+      reply: testText,
+      audioUrl,
+      emotion: 'happy',
+      isTest: true,
+      voiceType: `voicevox:${voiceId}`
+    };
+    
+    // 応答を返す
+    res.json(responseData);
+    
+  } catch (error) {
+    console.error('VOICEVOXテストAPIエラー:', error);
+    res.status(500).json({ 
+      error: 'VOICEVOXテスト実行中にエラーが発生しました', 
+      details: error.message 
+    });
+  }
+});
+
 // ボイスタイプを解析して設定オブジェクトに変換する関数
 function parseVoiceType(voiceType) {
   if (!voiceType) {
