@@ -90,6 +90,37 @@ npm run dev
 npm run dev
 ```
 
+## Live2Dモデルについて
+
+### モデルのリップシンクパラメータ
+
+Live2Dモデルのリップシンク（口パク）機能を使用するには、モデルが適切なパラメータを持っている必要があります。このプロジェクトでは、以下のようなパラメータ名を自動的に検出して口の動きに使用します：
+
+- 一般的なLive2Dパラメータ
+  - `ParamMouthOpenY`
+  - `PARAM_MOUTH_OPEN_Y`
+  - `ParamMouthOpen`
+  - `PARAM_MOUTH_OPEN`
+
+- 虹色まおモデル用パラメータ
+  - `ParamA` (虹色まおのmodel3.jsonでLipSyncグループに指定されているパラメータ)
+
+モデルによって使用されるパラメータが異なる場合は、`client/main.js`の以下の部分を修正してください：
+
+```javascript
+// 口の開閉値を複数のパラメータに適用する関数
+function applyMouthOpenValue(value) {
+  // ...
+  const mouthParams = [
+    'ParamA',             // 虹色まおの口パクパラメータ
+    'ParamMouthOpenY',
+    'PARAM_MOUTH_OPEN_Y',
+    // 必要に応じて他のパラメータを追加
+  ];
+  // ...
+}
+```
+
 ## 機能実装ステータス
 
 - [x] プロジェクト構造のセットアップ
