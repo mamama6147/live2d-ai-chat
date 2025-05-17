@@ -6,6 +6,7 @@ let model; // Live2Dモデル
 let audioContext; // Web Audio Context
 let audioSource; // 現在の音声ソース
 let lipSyncInterval = null; // リップシンクタイマー
+let testMode = false; // テストモードフラグ
 
 // APIのベースURL
 const API_BASE_URL = 'http://localhost:3000';
@@ -120,6 +121,9 @@ window.addEventListener('DOMContentLoaded', () => {
       // テストボタンの設定
       setupTestControls();
       
+      // サーバーからテストモードの状態を取得
+      await checkTestModeStatus();
+      
       showDebugInfo('初期化が完了しました');
       
       // ローディング表示を非表示
@@ -137,6 +141,46 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, 2000); // 2秒待機して確実にスクリプトをロード
 });
+
+// サーバーからテストモードの状態を取得
+async function checkTestModeStatus() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/test-mode-status`);
+    if (response.ok) {
+      const data = await response.json();
+      updateTestModeUI(data.testMode);
+    }
+  } catch (error) {
+    showDebugInfo(`テストモード状態取得エラー: ${error.message}`);
+  }
+}
+
+// テストモード表示を更新
+function updateTestModeUI(isTestMode) {
+  testMode = isTestMode;
+  
+  // テストモードステータス表示を更新
+  const testModeStatus = document.getElementById('test-mode-status');
+  if (testModeStatus) {
+    testModeStatus.textContent = testMode ? 'ON' : 'OFF';
+    testModeStatus.className = testMode ? 'test-mode-status enabled' : 'test-mode-status';
+  }
+  
+  // テストモードボタンの表示を更新
+  const testModeButton = document.getElementById('toggle-test-mode');
+  if (testModeButton) {
+    testModeButton.classList.toggle('active', testMode);
+    testModeButton.textContent = testMode ? 'テストモード解除' : 'テストモード有効化';
+  }
+  
+  // テストモードバナーの表示を更新
+  const testModeBanner = document.getElementById('test-mode-banner');
+  if (testModeBanner) {
+    testModeBanner.style.display = testMode ? 'block' : 'none';
+  }
+  
+  showDebugInfo(`テストモードを${testMode ? '有効' : '無効'}にしました`);
+}
 
 // Live2D初期化
 async function initLive2D() {
@@ -708,6 +752,11 @@ function setupChatUI() {
       const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'voicevox:1';
       showDebugInfo(`使用するボイスタイプ: ${voiceType}`);
       
+      // テストモード中はその表示を追加
+      if (testMode) {
+        showDebugInfo('テストモードが有効です: OpenAI APIは使用されません');
+      }
+      
       // 実際のAPIを呼び出す
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
@@ -723,6 +772,11 @@ function setupChatUI() {
 
       const data = await response.json();
       showDebugInfo(`応答受信: ${data.reply}`);
+      
+      // テストモードフラグを更新（サーバー側の状態を反映）
+      if (data.testMode !== undefined && testMode !== data.testMode) {
+        updateTestModeUI(data.testMode);
+      }
 
       // AIの応答をUIに追加
       addMessageToUI('ai', data.reply);
@@ -750,6 +804,7 @@ function setupTestControls() {
   const lipSyncTestButton = document.getElementById('lip-sync-test');
   const voicevoxTestButton = document.getElementById('voicevox-test');
   const voicevoxSpeakersButton = document.getElementById('voicevox-speakers');
+  const testModeButton = document.getElementById('toggle-test-mode');
   
   // リップシンクテストボタン
   if (lipSyncTestButton) {
@@ -861,5 +916,41 @@ function setupTestControls() {
     });
   } else {
     showDebugInfo('VOICEVOX話者一覧ボタンが見つかりません');
+  }
+  
+  // テストモード切り替えボタン
+  if (testModeButton) {
+    testModeButton.addEventListener('click', async () => {
+      showDebugInfo('テストモード切り替えボタンがクリックされました');
+      
+      try {
+        // テストモード切り替えAPIを呼び出す
+        const response = await fetch(`${API_BASE_URL}/api/toggle-test-mode`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`テストモード切り替えエラー: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // UIを更新
+        updateTestModeUI(data.testMode);
+        
+        // 状態をメッセージとして表示
+        addMessageToUI('ai', `【システム】テストモードを${data.testMode ? '有効' : '無効'}にしました。${data.testMode ? 'OpenAI APIは使用されません。' : ''}`);
+        
+      } catch (error) {
+        showDebugInfo(`テストモード切り替えエラー: ${error.message}`);
+        console.error('テストモード切り替えエラー:', error);
+        addMessageToUI('ai', 'テストモードの切り替えに失敗しました。サーバーが起動しているか確認してください。');
+      }
+    });
+  } else {
+    showDebugInfo('テストモード切り替えボタンが見つかりません');
   }
 }
