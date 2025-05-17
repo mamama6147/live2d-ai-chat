@@ -13,13 +13,60 @@ const openai = new OpenAIApi(configuration);
 // 会話履歴（簡易的なインメモリ保存 - 本番では適切なDB使用推奨）
 const conversations = {};
 
+// テストモード用のレスポンスリスト
+let testResponses = ['これはテストモードの返答です。API接続は行われていません。'];
+
+// 環境変数からテストレスポンスを読み込む
+if (process.env.TEST_RESPONSES) {
+  testResponses = process.env.TEST_RESPONSES.split(',');
+}
+
 /**
  * ChatGPT APIを使用して会話応答を生成する
  * @param {string} userMessage - ユーザーからのメッセージ
  * @param {string} sessionId - セッションID（オプション、セッション管理用）
+ * @param {boolean} testMode - テストモードフラグ（APIを使用せず、固定レスポンスを返す）
  * @returns {Promise<string>} AI応答テキスト
  */
-export async function createChatCompletion(userMessage, sessionId = 'default') {
+export async function createChatCompletion(userMessage, sessionId = 'default', testMode = false) {
+  // テストモードかどうかの判定（引数または環境変数から）
+  const useTestMode = testMode || (process.env.USE_API?.toLowerCase() === 'false');
+  
+  // テストモードの場合は固定レスポンスからランダムに選ぶ
+  if (useTestMode) {
+    console.log('テストモードが有効：APIは使用せず固定レスポンスを返します');
+    
+    // テストレスポンスからランダムに選択
+    const randomIndex = Math.floor(Math.random() * testResponses.length);
+    const testResponse = testResponses[randomIndex];
+    
+    // 会話履歴に追加（同じくテストモード用）
+    if (!conversations[sessionId]) {
+      conversations[sessionId] = [
+        {
+          role: 'system',
+          content: `テストモード：これは実際のAPIではありません。`
+        }
+      ];
+    }
+    
+    // ユーザーのメッセージを履歴に追加
+    conversations[sessionId].push({
+      role: 'user',
+      content: userMessage
+    });
+    
+    // テスト応答を履歴に追加
+    conversations[sessionId].push({
+      role: 'assistant',
+      content: testResponse
+    });
+    
+    return testResponse;
+  }
+  
+  // 以下は通常のAPI利用モード
+  
   // APIキーが設定されていない場合
   if (!process.env.OPENAI_API_KEY) {
     console.error('OpenAI APIキーが設定されていません');
