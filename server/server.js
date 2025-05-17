@@ -17,6 +17,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// テストモードのフラグ（デフォルトはオフ）
+let testMode = false;
+
 // CORSの設定 - 開発環境では全てのオリジンを許可
 app.use(cors({
   origin: '*', // 開発環境では全てのオリジンを許可
@@ -41,6 +44,21 @@ app.get('/', (req, res) => {
 // APIのテスト用エンドポイント
 app.get('/api/test', (req, res) => {
   res.json({ message: 'APIサーバーが正常に動作しています' });
+});
+
+// テストモード切り替えエンドポイント
+app.post('/api/toggle-test-mode', (req, res) => {
+  testMode = !testMode;
+  console.log(`テストモードを${testMode ? '有効' : '無効'}にしました`);
+  res.json({ 
+    testMode, 
+    message: `テストモードを${testMode ? '有効' : '無効'}にしました` 
+  });
+});
+
+// テストモード状態取得エンドポイント
+app.get('/api/test-mode-status', (req, res) => {
+  res.json({ testMode });
 });
 
 // VOICEVOXの接続確認用エンドポイント
@@ -109,6 +127,36 @@ app.get('/api/voicevox-speakers', async (req, res) => {
   }
 });
 
+// テスト用の応答文章を生成する関数
+function generateTestResponse(message) {
+  // 質問の内容に応じた応答のパターンを用意
+  const responses = [
+    'これはテストモードでの応答です。実際のAIは使用されていません。',
+    'テストモード中なので、OpenAI APIには接続していません。',
+    `「${message}」というメッセージを受け取りました。これはテスト応答です。`,
+    '開発中のテスト応答です。このメッセージはランダムに選ばれています。',
+    'テストモードでは、このようなサンプル応答が返されます。実際のAPIコストはかかりません。',
+    '今日もいい天気ですね。これはテストモードのサンプル応答です。',
+    'こんにちは！どんなことでもお聞きください。（テストモード応答）',
+    'テストモードが有効なので、このメッセージは固定応答の一つです。'
+  ];
+  
+  // 特定のキーワードに対する応答
+  if (message.includes('こんにちは') || message.includes('hello')) {
+    return 'こんにちは！テストモードでのお返事です。どうぞよろしくお願いします。';
+  } else if (message.includes('天気')) {
+    return '今日の天気は晴れ時々曇りです。これはテストモードの固定応答です。';
+  } else if (message.includes('名前')) {
+    return '私はLive2D AIチャットのテストアシスタントです。テストモードで動作しています。';
+  } else if (message.includes('テスト')) {
+    return 'はい、現在テストモードで動作しています。OpenAI APIは使用していません。';
+  }
+  
+  // ランダムに応答を選択
+  const randomIndex = Math.floor(Math.random() * responses.length);
+  return responses[randomIndex];
+}
+
 // チャットAPIエンドポイント
 app.post('/api/chat', async (req, res) => {
   try {
@@ -123,8 +171,17 @@ app.post('/api/chat', async (req, res) => {
     
     console.log('ユーザーメッセージ:', message);
     
-    // OpenAI APIを使用してチャット応答を取得
-    const aiReply = await createChatCompletion(message);
+    let aiReply;
+    // テストモードの場合
+    if (testMode) {
+      console.log('テストモードが有効: OpenAI APIは使用しません');
+      // テスト用の固定応答を生成
+      aiReply = generateTestResponse(message);
+    } else {
+      // 通常モード: OpenAI APIを使用
+      aiReply = await createChatCompletion(message);
+    }
+    
     console.log('AI応答:', aiReply);
     
     // 簡易的な感情分析
@@ -148,6 +205,7 @@ app.post('/api/chat', async (req, res) => {
       reply: aiReply,
       audioUrl,
       emotion,
+      testMode, // テストモードフラグを含める
       voiceType: `${voiceOptions.service}:${voiceOptions.voice || 'default'}` // 使用したボイスタイプを含める
     };
     
@@ -230,4 +288,5 @@ function analyzeEmotion(text) {
 app.listen(PORT, () => {
   console.log(`サーバーが起動しました: http://localhost:${PORT}`);
   console.log(`VOICEVOXエンジン接続先: ${process.env.VOICEVOX_ENDPOINT || 'http://localhost:50021'}`);
+  console.log(`テストモード: ${testMode ? '有効' : '無効'}`);
 });

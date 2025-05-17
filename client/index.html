@@ -36,6 +36,11 @@
     
     <!-- チャットUI領域 -->
     <div class="chat-container">
+      <!-- テストモード表示バナー -->
+      <div id="test-mode-banner" class="test-mode-banner" style="display: none;">
+        <span>テストモード: OpenAI APIは使用していません</span>
+      </div>
+      
       <div id="chat-log" class="chat-log"></div>
       
       <div class="settings-panel">
@@ -83,6 +88,10 @@
     <button id="lip-sync-test">口パクテスト</button>
     <button id="voicevox-test">VOICEVOXテスト</button>
     <button id="voicevox-speakers">VOICEVOX話者一覧</button>
+    <div class="test-mode-controls">
+      <button id="toggle-test-mode" class="test-mode-button">テストモード切替</button>
+      <span id="test-mode-status" class="test-mode-status">オフ</span>
+    </div>
   </div>
 
   <!-- デバッグ情報表示領域 - 常に表示 -->
