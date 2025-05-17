@@ -42,14 +42,21 @@
         <div class="voice-settings">
           <label for="voice-type">ボイスタイプ:</label>
           <select id="voice-type">
-            <option value="dummy:default">デフォルト</option>
-            <option value="azure:ja-JP-NanamiNeural">Nanami（女性）</option>
-            <option value="azure:ja-JP-KeitaNeural">Keita（男性）</option>
-            <option value="azure:ja-JP-AoiNeural">Aoi（女性）</option>
+            <!-- VOICEVOXをデフォルトに設定 -->
             <option value="voicevox:1">四国めたん（VOICEVOX）</option>
             <option value="voicevox:2">ずんだもん（VOICEVOX）</option>
             <option value="voicevox:3">春日部つむぎ（VOICEVOX）</option>
             <option value="voicevox:8">波音リツ（VOICEVOX）</option>
+            <option value="voicevox:10">雨晴はう（VOICEVOX）</option>
+            <option value="voicevox:11">冥鳴ひまり（VOICEVOX）</option>
+            <option value="voicevox:14">くろくろ（VOICEVOX）</option>
+            <option value="voicevox:20">もち子(cv 明日葉よもぎ)（VOICEVOX）</option>
+            <!-- Azure音声も残しておく -->
+            <option value="azure:ja-JP-NanamiNeural">Nanami（Azure女性）</option>
+            <option value="azure:ja-JP-KeitaNeural">Keita（Azure男性）</option>
+            <option value="azure:ja-JP-AoiNeural">Aoi（Azure女性）</option>
+            <!-- ダミー音声オプション -->
+            <option value="dummy:default">ダミー音声（音声なし）</option>
           </select>
         </div>
         
@@ -71,9 +78,11 @@
     </div>
   </div>
 
-  <!-- リップシンクテストボタン -->
+  <!-- テストコントロールエリア -->
   <div class="test-controls">
     <button id="lip-sync-test">口パクテスト</button>
+    <button id="voicevox-test">VOICEVOXテスト</button>
+    <button id="voicevox-speakers">VOICEVOX話者一覧</button>
   </div>
 
   <!-- デバッグ情報表示領域 - 常に表示 -->
