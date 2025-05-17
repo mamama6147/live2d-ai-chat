@@ -6,6 +6,7 @@ let model; // Live2Dモデル
 let audioContext; // Web Audio Context
 let audioSource; // 現在の音声ソース
 let lipSyncInterval = null; // リップシンクタイマー
+let testMode = false; // テストモードフラグ
 
 // APIのベースURL
 const API_BASE_URL = 'http://localhost:3000';
@@ -107,6 +108,9 @@ window.addEventListener('DOMContentLoaded', () => {
       
       // チャットUIの設定
       setupChatUI();
+      
+      // テストモード設定
+      setupTestMode();
       
       // 初期メッセージをUIに追加
       const chatLog = document.getElementById('chat-log');
@@ -595,13 +599,34 @@ function applyMouthOpenValue(value) {
 }
 
 // メッセージをUIに追加する関数
-function addMessageToUI(role, text) {
+function addMessageToUI(role, text, isTestMode = false) {
   const chatLog = document.getElementById('chat-log');
   if (!chatLog) return;
 
   const messageElement = document.createElement('div');
   messageElement.classList.add('chat-message', `${role}-message`);
+  
+  // テストモード時はAI応答のスタイルを変更
+  if (role === 'ai' && isTestMode) {
+    messageElement.classList.add('test-mode-message');
+  }
+  
   messageElement.textContent = text;
+  
+  // テストモード時のバッジを追加
+  if (role === 'ai' && isTestMode) {
+    const testBadge = document.createElement('span');
+    testBadge.classList.add('test-mode-badge');
+    testBadge.textContent = '[テストモード]';
+    testBadge.style.fontSize = '0.7em';
+    testBadge.style.fontWeight = 'bold';
+    testBadge.style.backgroundColor = '#ffd54f';
+    testBadge.style.color = '#333';
+    testBadge.style.padding = '2px 4px';
+    testBadge.style.borderRadius = '3px';
+    testBadge.style.marginLeft = '5px';
+    messageElement.appendChild(testBadge);
+  }
   
   chatLog.appendChild(messageElement);
   
@@ -669,6 +694,61 @@ function changeExpression(emotion) {
   }
 }
 
+// テストモードの設定
+function setupTestMode() {
+  const testModeToggle = document.getElementById('test-mode-toggle');
+  const testModeStatus = document.getElementById('test-mode-status');
+  
+  if (!testModeToggle || !testModeStatus) {
+    showDebugInfo('テストモード設定要素が見つかりません');
+    return;
+  }
+  
+  // サーバーからテストモードの初期状態を取得
+  fetch(`${API_BASE_URL}/api/test-mode`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({})
+  })
+  .then(response => response.json())
+  .then(data => {
+    // サーバー側の状態を反映
+    testMode = data.testMode === true;
+    testModeToggle.checked = testMode;
+    testModeStatus.textContent = testMode ? 'オン' : 'オフ';
+    showDebugInfo(`テストモード初期状態: ${testMode ? 'オン' : 'オフ'}`);
+  })
+  .catch(error => {
+    console.error('テストモード状態取得エラー:', error);
+    showDebugInfo(`テストモード状態取得エラー: ${error.message}`);
+  });
+  
+  // テストモードトグルのイベント処理
+  testModeToggle.addEventListener('change', () => {
+    testMode = testModeToggle.checked;
+    testModeStatus.textContent = testMode ? 'オン' : 'オフ';
+    
+    // サーバー側のテストモード状態を更新
+    fetch(`${API_BASE_URL}/api/test-mode`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ enabled: testMode })
+    })
+    .then(response => response.json())
+    .then(data => {
+      showDebugInfo(`テストモード設定: ${data.message}`);
+    })
+    .catch(error => {
+      console.error('テストモード設定エラー:', error);
+      showDebugInfo(`テストモード設定エラー: ${error.message}`);
+    });
+  });
+}
+
 // チャットUIのセットアップ
 function setupChatUI() {
   const userInput = document.getElementById('user-input');
@@ -701,20 +781,24 @@ function setupChatUI() {
     userInput.value = '';
 
     try {
-      showDebugInfo(`メッセージ送信: ${message}`);
+      showDebugInfo(`メッセージ送信: ${message} (テストモード: ${testMode ? 'オン' : 'オフ'})`);
       
       // ボイスタイプの取得
       const voiceTypeSelect = document.getElementById('voice-type');
       const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'voicevox:1';
       showDebugInfo(`使用するボイスタイプ: ${voiceType}`);
       
-      // 実際のAPIを呼び出す
+      // 実際のAPIを呼び出す（テストモードの情報も送信）
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ message, voiceType })
+        body: JSON.stringify({ 
+          message, 
+          voiceType,
+          useTestMode: testMode // テストモードフラグを追加
+        })
       });
 
       if (!response.ok) {
@@ -722,10 +806,11 @@ function setupChatUI() {
       }
 
       const data = await response.json();
-      showDebugInfo(`応答受信: ${data.reply}`);
+      const isTestModeResponse = data.testMode === true;
+      showDebugInfo(`応答受信: ${data.reply} (テストモード: ${isTestModeResponse ? 'オン' : 'オフ'})`);
 
-      // AIの応答をUIに追加
-      addMessageToUI('ai', data.reply);
+      // AIの応答をUIに追加（テストモードフラグ付き）
+      addMessageToUI('ai', data.reply, isTestModeResponse);
       
       // 音声再生
       if (data.audioUrl) {
