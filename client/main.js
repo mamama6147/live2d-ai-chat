@@ -321,12 +321,13 @@ function testMouthMovement() {
   
   // 口パク用のパラメータ候補
   const mouthParams = [
-    'ParamMouthOpenY',        // 一般的な口開きパラメータ
-    'PARAM_MOUTH_OPEN_Y',     // 別の形式
-    'ParamMouthOpen',         // 別の命名規則
+    'ParamA',               // 虹色まおの口パクパラメータ
+    'ParamMouthOpenY',      // 一般的な口開きパラメータ
+    'PARAM_MOUTH_OPEN_Y',   // 別の形式
+    'ParamMouthOpen',       // 別の命名規則
     'PARAM_MOUTH_OPEN',
     'Param_mouth_open_y',
-    'ParamMouthForm',         // 口の形状
+    'ParamMouthForm',       // 口の形状
     'PARAM_MOUTH_FORM'
   ];
   
@@ -553,6 +554,7 @@ function performDummyLipSync() {
   
   // 口パク用パラメータ
   const mouthParams = [
+    'ParamA',             // 虹色まおの口パクパラメータ
     'ParamMouthOpenY',
     'PARAM_MOUTH_OPEN_Y',
     'ParamMouthOpen',
@@ -612,6 +614,7 @@ function applyMouthOpenValue(value) {
   
   // パラメータ候補リスト
   const mouthParams = [
+    'ParamA',             // 虹色まおの口パクパラメータ
     'ParamMouthOpenY',
     'PARAM_MOUTH_OPEN_Y',
     'ParamMouthOpen',
