@@ -5,6 +5,8 @@ let app; // PIXIアプリケーション
 let model; // Live2Dモデル
 let audioContext; // Web Audio Context
 let audioSource; // 現在の音声ソース
+let analyser; // 音声解析用のアナライザーノード
+let animationFrameId = null; // アニメーションフレームID
 let lipSyncInterval = null; // リップシンクタイマー
 let testMode = false; // テストモードフラグ
 
@@ -406,6 +408,9 @@ function testMouthMovement() {
 
 // 音声再生とリップシンク
 async function playVoice(audioUrl) {
+  // まず現在実行中のリップシンクをすべて停止
+  stopCurrentLipSync();
+  
   // リップシンクモードの取得
   const lipSyncModeSelect = document.getElementById('lip-sync-mode');
   const lipSyncMode = lipSyncModeSelect ? lipSyncModeSelect.value : 'auto';
@@ -421,12 +426,6 @@ async function playVoice(audioUrl) {
     showDebugInfo('ダミーリップシンクモードを使用します');
     performDummyLipSync();
     return;
-  }
-  
-  // まず進行中のリップシンクを停止
-  if (lipSyncInterval) {
-    clearInterval(lipSyncInterval);
-    lipSyncInterval = null;
   }
   
   // モデルがロードされていない場合
@@ -447,11 +446,6 @@ async function playVoice(audioUrl) {
   }
 
   try {
-    // 前の音声が再生中なら停止
-    if (audioSource) {
-      audioSource.stop();
-    }
-
     // 完全なURLの構築
     const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE_URL}${audioUrl}`;
     showDebugInfo(`音声再生URL: ${fullAudioUrl}`);
@@ -478,63 +472,36 @@ async function playVoice(audioUrl) {
     try {
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       
-      // 音声再生
+      // 前の音声が再生中なら停止
+      if (audioSource) {
+        audioSource.stop();
+        audioSource = null;
+      }
+      
+      // 音声再生用のソースノード作成
       audioSource = audioContext.createBufferSource();
       audioSource.buffer = audioBuffer;
       
       // リップシンク用のAnalyserNodeを作成
-      const analyser = audioContext.createAnalyser();
+      analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
+      
+      // 接続: ソース → アナライザー → 出力
       audioSource.connect(analyser);
       analyser.connect(audioContext.destination);
       
+      // 音声終了時のイベントハンドラを設定
+      audioSource.onended = () => {
+        showDebugInfo('音声再生が完了しました');
+        stopCurrentLipSync();
+      };
+      
       // 再生開始
       audioSource.start(0);
+      showDebugInfo('音声再生を開始しました');
       
-      // リップシンク処理
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      
-      // 前回の値を保持して滑らかに変化させる
-      let lastMouthOpenValue = 0;
-      const smoothingFactor = 0.3; // 値が小さいほどスムーズになる
-      
-      // リップシンク用のアニメーションフレーム
-      function animateMouth() {
-        if (!model) return;
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        // 音量の平均値を計算
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-        
-        // 音量に応じて口の開閉度を調整（感度を上げる）
-        const targetMouthValue = Math.min(average / 100, 1); // 感度調整
-        const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetMouthValue - lastMouthOpenValue);
-        lastMouthOpenValue = mouthOpenValue;
-        
-        // Live2Dモデルのパラメータに適用 - 複数のパラメータを試す
-        applyMouthOpenValue(mouthOpenValue);
-        
-        // 音声が再生中なら次のフレームをリクエスト
-        if (audioSource && audioSource.buffer) {
-          requestAnimationFrame(animateMouth);
-        }
-      }
-      
-      // アニメーション開始
-      animateMouth();
-      
-      // 音声終了時の処理
-      audioSource.onended = () => {
-        audioSource = null;
-        // モデルの口を閉じる
-        applyMouthOpenValue(0);
-      };
+      // リップシンクのアニメーションを開始
+      startLipSyncAnimation();
       
     } catch (decodeError) {
       showDebugInfo(`音声デコードエラー: ${decodeError.message}. ダミーリップシンクを使用します。`);
@@ -548,19 +515,72 @@ async function playVoice(audioUrl) {
   }
 }
 
+// リップシンクアニメーションを開始する関数
+function startLipSyncAnimation() {
+  // バッファ長の取得
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  
+  // 前回の値を保持して滑らかに変化させる
+  let lastMouthOpenValue = 0;
+  const smoothingFactor = 0.3; // 値が小さいほどスムーズになる
+  
+  // リップシンク用のアニメーションフレーム関数
+  function animateMouth() {
+    // アニメーションフレームIDを保存
+    animationFrameId = requestAnimationFrame(animateMouth);
+    
+    if (!model || !analyser) return;
+    
+    // 周波数データの取得
+    analyser.getByteFrequencyData(dataArray);
+    
+    // 音量の平均値を計算
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sum += dataArray[i];
+    }
+    const average = sum / bufferLength;
+    
+    // 音量に応じて口の開閉度を調整（感度を上げる）
+    const targetMouthValue = Math.min(average / 100, 1); // 感度調整
+    const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetMouthValue - lastMouthOpenValue);
+    lastMouthOpenValue = mouthOpenValue;
+    
+    // モデルに適用
+    applyMouthOpenValue(mouthOpenValue);
+  }
+  
+  // アニメーション開始
+  animateMouth();
+}
+
+// 現在実行中のリップシンクをすべて停止する関数
+function stopCurrentLipSync() {
+  // インターバルタイマーの停止
+  if (lipSyncInterval) {
+    clearInterval(lipSyncInterval);
+    lipSyncInterval = null;
+  }
+  
+  // アニメーションフレームの停止
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+  
+  // 口を閉じる
+  applyMouthOpenValue(0);
+  
+  showDebugInfo('リップシンクを停止しました');
+}
+
 // ダミーのリップシンク（音声ファイルがない場合やエラー時）
 function performDummyLipSync() {
   showDebugInfo('ダミーリップシンクを開始します');
   
-  // 口パク用パラメータ
-  const mouthParams = [
-    'ParamA',             // 虹色まおの口パクパラメータ
-    'ParamMouthOpenY',
-    'PARAM_MOUTH_OPEN_Y',
-    'ParamMouthOpen',
-    'PARAM_MOUTH_OPEN',
-    'Param_mouth_open_y'
-  ];
+  // まず現在実行中のリップシンクをすべて停止
+  stopCurrentLipSync();
   
   // 前の値
   let lastMouthOpenValue = 0;
@@ -571,12 +591,7 @@ function performDummyLipSync() {
   // 口の開閉を時間単位でシミュレートする値
   let time = 0;
   
-  // 既存のタイマーがあれば停止
-  if (lipSyncInterval) {
-    clearInterval(lipSyncInterval);
-  }
-  
-  // ランダムな口パクタイマー
+  // ダミーリップシンクタイマー
   lipSyncInterval = setInterval(() => {
     time += 0.1;
     
@@ -596,15 +611,8 @@ function performDummyLipSync() {
   
   // 5秒後に停止（実際の音声長に合わせる場合は調整）
   setTimeout(() => {
-    if (lipSyncInterval) {
-      clearInterval(lipSyncInterval);
-      lipSyncInterval = null;
-      
-      // 口を閉じる
-      applyMouthOpenValue(0);
-      
-      showDebugInfo('ダミーリップシンク完了');
-    }
+    stopCurrentLipSync();
+    showDebugInfo('ダミーリップシンク完了');
   }, 5000);
 }
 
