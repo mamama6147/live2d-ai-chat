@@ -69,6 +69,17 @@
             <option value="off">オフ</option>
           </select>
         </div>
+        
+        <!-- テストモード設定 -->
+        <div class="test-mode-settings">
+          <label for="test-mode">テストモード:</label>
+          <div class="toggle-switch">
+            <input type="checkbox" id="test-mode-toggle" class="toggle">
+            <label for="test-mode-toggle"></label>
+            <span id="test-mode-status">オフ</span>
+          </div>
+          <div class="test-mode-info">※テストモード時はOpenAI APIを使用せず固定レスポンスが返されます</div>
+        </div>
       </div>
       
       <div class="chat-input-area">
