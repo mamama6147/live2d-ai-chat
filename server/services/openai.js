@@ -59,7 +59,7 @@ export async function createChatCompletion(userMessage, sessionId = 'default') {
     
     // OpenAI APIリクエスト
     const completion = await openai.createChatCompletion({
-      model: 'gpt-3.5-turbo', // または 'gpt-4'
+      model: 'gpt-4o', // GPT-4.1の最新モデル（gpt-4o）を使用
       messages: conversations[sessionId],
       max_tokens: 150,
       temperature: 0.7,
