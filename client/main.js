@@ -117,7 +117,7 @@ window.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(initialMessage);
       }
       
-      // リップシンクテストボタンの設定
+      // テストボタンの設定
       setupTestControls();
       
       showDebugInfo('初期化が完了しました');
@@ -705,7 +705,7 @@ function setupChatUI() {
       
       // ボイスタイプの取得
       const voiceTypeSelect = document.getElementById('voice-type');
-      const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'dummy:default';
+      const voiceType = voiceTypeSelect ? voiceTypeSelect.value : 'voicevox:1';
       showDebugInfo(`使用するボイスタイプ: ${voiceType}`);
       
       // 実際のAPIを呼び出す
@@ -748,38 +748,118 @@ function setupChatUI() {
 // テストコントロールのセットアップ
 function setupTestControls() {
   const lipSyncTestButton = document.getElementById('lip-sync-test');
+  const voicevoxTestButton = document.getElementById('voicevox-test');
+  const voicevoxSpeakersButton = document.getElementById('voicevox-speakers');
   
-  if (!lipSyncTestButton) {
+  // リップシンクテストボタン
+  if (lipSyncTestButton) {
+    lipSyncTestButton.addEventListener('click', async () => {
+      showDebugInfo('リップシンクテストを実行します');
+      
+      try {
+        // テストAPIを呼び出す
+        const response = await fetch(`${API_BASE_URL}/api/lip-sync-test`);
+        
+        if (!response.ok) {
+          throw new Error(`テストAPIエラー: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // テストメッセージを表示
+        addMessageToUI('ai', `【テスト】 ${data.reply}`);
+        
+        // 音声再生とリップシンク
+        if (data.audioUrl) {
+          playVoice(data.audioUrl);
+        }
+        
+      } catch (error) {
+        showDebugInfo(`テストエラー: ${error.message}`);
+        console.error('リップシンクテストエラー:', error);
+        addMessageToUI('ai', '音声テストに失敗しました。サーバーが起動しているか確認してください。');
+      }
+    });
+  } else {
     showDebugInfo('リップシンクテストボタンが見つかりません');
-    return;
   }
   
-  // リップシンクテストボタンのイベント
-  lipSyncTestButton.addEventListener('click', async () => {
-    showDebugInfo('リップシンクテストを実行します');
-    
-    try {
-      // テストAPIを呼び出す
-      const response = await fetch(`${API_BASE_URL}/api/lip-sync-test`);
+  // VOICEVOXテストボタン
+  if (voicevoxTestButton) {
+    voicevoxTestButton.addEventListener('click', async () => {
+      showDebugInfo('VOICEVOXテストを実行します');
       
-      if (!response.ok) {
-        throw new Error(`テストAPIエラー: ${response.status} ${response.statusText}`);
+      try {
+        // VOICEVOXテストAPIを呼び出す
+        const response = await fetch(`${API_BASE_URL}/api/voicevox-test`);
+        
+        if (!response.ok) {
+          throw new Error(`VOICEVOX テストAPIエラー: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // テスト結果をUIに追加
+        if (data.status === 'success') {
+          addMessageToUI('ai', `【VOICEVOX】 接続テスト成功: バージョン ${JSON.stringify(data.version)}`);
+          showDebugInfo(`VOICEVOX接続テスト成功: ${data.endpoint}`);
+        } else {
+          addMessageToUI('ai', `【VOICEVOX】 接続テスト失敗: ${data.message}`);
+          showDebugInfo(`VOICEVOX接続テスト失敗: ${data.message}`);
+        }
+        
+      } catch (error) {
+        showDebugInfo(`VOICEVOXテストエラー: ${error.message}`);
+        console.error('VOICEVOXテストエラー:', error);
+        addMessageToUI('ai', 'VOICEVOXテストに失敗しました。VOICEVOXエンジンが起動しているか確認してください。');
       }
+    });
+  } else {
+    showDebugInfo('VOICEVOXテストボタンが見つかりません');
+  }
+  
+  // VOICEVOX話者一覧ボタン
+  if (voicevoxSpeakersButton) {
+    voicevoxSpeakersButton.addEventListener('click', async () => {
+      showDebugInfo('VOICEVOX話者一覧を取得します');
       
-      const data = await response.json();
-      
-      // テストメッセージを表示
-      addMessageToUI('ai', `【テスト】 ${data.reply}`);
-      
-      // 音声再生とリップシンク
-      if (data.audioUrl) {
-        playVoice(data.audioUrl);
+      try {
+        // VOICEVOX話者一覧APIを呼び出す
+        const response = await fetch(`${API_BASE_URL}/api/voicevox-speakers`);
+        
+        if (!response.ok) {
+          throw new Error(`VOICEVOX 話者一覧APIエラー: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.speakers) {
+          // 話者一覧を表示
+          let speakerInfo = '【VOICEVOX話者一覧】\n';
+          
+          data.speakers.forEach(speaker => {
+            speakerInfo += `${speaker.name}:\n`;
+            if (speaker.styles) {
+              speaker.styles.forEach(style => {
+                speakerInfo += `  - ID: ${style.id}, スタイル: ${style.name}\n`;
+              });
+            }
+          });
+          
+          addMessageToUI('ai', speakerInfo);
+          showDebugInfo('VOICEVOX話者一覧取得成功');
+        } else {
+          addMessageToUI('ai', '【VOICEVOX】 話者一覧の取得に失敗しました。');
+          showDebugInfo(`VOICEVOX話者一覧取得失敗: ${data.message || 'エラー'}`);
+        }
+        
+      } catch (error) {
+        showDebugInfo(`VOICEVOX話者一覧取得エラー: ${error.message}`);
+        console.error('VOICEVOX話者一覧取得エラー:', error);
+        addMessageToUI('ai', 'VOICEVOX話者一覧の取得に失敗しました。VOICEVOXエンジンが起動しているか確認してください。');
       }
-      
-    } catch (error) {
-      showDebugInfo(`テストエラー: ${error.message}`);
-      console.error('リップシンクテストエラー:', error);
-      addMessageToUI('ai', '音声テストに失敗しました。サーバーが起動しているか確認してください。');
-    }
-  });
+    });
+  } else {
+    showDebugInfo('VOICEVOX話者一覧ボタンが見つかりません');
+  }
 }
