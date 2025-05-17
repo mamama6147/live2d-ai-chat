@@ -17,6 +17,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// テストモードの状態
+let testMode = process.env.USE_API?.toLowerCase() === 'false';
+
 // CORSの設定 - 開発環境では全てのオリジンを許可
 app.use(cors({
   origin: '*', // 開発環境では全てのオリジンを許可
@@ -41,6 +44,23 @@ app.get('/', (req, res) => {
 // APIのテスト用エンドポイント
 app.get('/api/test', (req, res) => {
   res.json({ message: 'APIサーバーが正常に動作しています' });
+});
+
+// テストモード設定確認・切り替えエンドポイント
+app.post('/api/test-mode', (req, res) => {
+  const { enabled } = req.body;
+  
+  if (enabled !== undefined) {
+    // テストモードの状態を変更
+    testMode = enabled === true;
+    console.log(`テストモードを${testMode ? '有効' : '無効'}に設定しました`);
+  }
+  
+  // 現在の状態を返す
+  res.json({ 
+    testMode,
+    message: `テストモードは${testMode ? '有効' : '無効'}です`
+  });
 });
 
 // VOICEVOXの接続確認用エンドポイント
@@ -114,7 +134,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     console.log('APIリクエスト受信:', req.body);
     
-    const { message, voiceType } = req.body;
+    const { message, voiceType, useTestMode } = req.body;
     
     // メッセージが空の場合
     if (!message || message.trim() === '') {
@@ -123,9 +143,12 @@ app.post('/api/chat', async (req, res) => {
     
     console.log('ユーザーメッセージ:', message);
     
-    // OpenAI APIを使用してチャット応答を取得
-    const aiReply = await createChatCompletion(message);
-    console.log('AI応答:', aiReply);
+    // リクエストまたはサーバー設定からテストモードを判断
+    const isTestMode = useTestMode !== undefined ? useTestMode : testMode;
+    
+    // OpenAI APIを使用してチャット応答を取得（テストモードフラグ付き）
+    const aiReply = await createChatCompletion(message, 'default', isTestMode);
+    console.log(`AI応答 (${isTestMode ? 'テストモード' : '通常モード'}):', ${aiReply}`);
     
     // 簡易的な感情分析
     const emotion = analyzeEmotion(aiReply);
@@ -148,7 +171,8 @@ app.post('/api/chat', async (req, res) => {
       reply: aiReply,
       audioUrl,
       emotion,
-      voiceType: `${voiceOptions.service}:${voiceOptions.voice || 'default'}` // 使用したボイスタイプを含める
+      voiceType: `${voiceOptions.service}:${voiceOptions.voice || 'default'}`, // 使用したボイスタイプを含める
+      testMode: isTestMode // テストモードかどうかのフラグを含める
     };
     
     console.log('APIレスポンス送信:', responseData);
@@ -230,4 +254,5 @@ function analyzeEmotion(text) {
 app.listen(PORT, () => {
   console.log(`サーバーが起動しました: http://localhost:${PORT}`);
   console.log(`VOICEVOXエンジン接続先: ${process.env.VOICEVOX_ENDPOINT || 'http://localhost:50021'}`);
+  console.log(`テストモード: ${testMode ? '有効' : '無効'}`);
 });
