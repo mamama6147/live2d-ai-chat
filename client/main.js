@@ -524,13 +524,21 @@ function startLipSyncAnimation() {
   // 前回の値を保持して滑らかに変化させる
   let lastMouthOpenValue = 0;
   // 音量しきい値（これより小さい音量では口を閉じる）
-  const volumeThreshold = 15;
+  const volumeThreshold = 10; // 少し下げて反応を良くする（元は15）
   // 滑らかさ調整係数（値が大きいほど反応が早い）
-  const smoothingFactor = 0.6; 
+  const smoothingFactor = 0.8; // より反応を早く（元は0.6）
   // 口の開閉を増幅する係数
-  const amplificationFactor = 2.5;
+  const amplificationFactor = 3.0; // より目立つ口の動き（元は2.5）
   
-  // デバッグ用の音量表示頻度を制限するためのカウンタ
+  // 口の動きをさらに増強するための周期的な変調に使用する変数
+  let time = 0;
+  const modulationSpeed = 0.2; // 変調速度
+  
+  // 音量履歴の記録用（口の動きをより自然にするため）
+  const volumeHistory = new Array(5).fill(0);
+  let historyIndex = 0;
+  
+  // デバッグ用のカウンタ
   let debugCounter = 0;
   
   // リップシンク用のアニメーションフレーム関数
@@ -556,14 +564,29 @@ function startLipSyncAnimation() {
     // 音量の平均値を計算
     const average = count > 0 ? totalVolume / count : 0;
     
-    // 音量が小さい場合は口を閉じる方向に動かす
+    // 音量履歴に追加
+    volumeHistory[historyIndex] = average;
+    historyIndex = (historyIndex + 1) % volumeHistory.length;
+    
+    // 時間変数を増加（周期的な変調に使用）
+    time += modulationSpeed;
+    
+    // 音量変化に基づく口の開き具合の計算
     let targetMouthValue;
     if (average < volumeThreshold) {
       targetMouthValue = 0; // しきい値未満なら口を閉じる
     } else {
       // しきい値以上なら音量に応じて口を開く
       // 音量に応じて口の開閉度を調整（感度と増幅を調整）
-      targetMouthValue = Math.min((average - volumeThreshold) / 80 * amplificationFactor, 1);
+      // 周期的な変調を追加して、音声中でも口が動き続けるようにする
+      const baseValue = (average - volumeThreshold) / 70 * amplificationFactor;
+      const modulation = Math.sin(time * 8) * 0.15 + Math.sin(time * 12) * 0.1;
+      
+      // 口の動きが単調にならないよう、音量の変化率も考慮
+      const volumeVariation = Math.max(0, Math.min(0.3, getVolumeVariation(volumeHistory) * 2));
+      
+      // 基本値 + 変調 + 音量変化率に基づく追加の動き
+      targetMouthValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
     }
     
     // スムージングを行うが、反応速度を改善
@@ -577,6 +600,18 @@ function startLipSyncAnimation() {
     if (DEBUG_MODE && ++debugCounter % 10 === 0) {
       showDebugInfo(`音量: ${average.toFixed(2)}, 口の開き: ${mouthOpenValue.toFixed(2)}`);
     }
+  }
+  
+  // 音量の変化率を計算する関数
+  function getVolumeVariation(history) {
+    if (history.length < 2) return 0;
+    
+    let totalDiff = 0;
+    for (let i = 1; i < history.length; i++) {
+      totalDiff += Math.abs(history[i] - history[i-1]);
+    }
+    
+    return totalDiff / (history.length - 1) / 100; // 正規化
   }
   
   // アニメーション開始
@@ -614,7 +649,7 @@ function performDummyLipSync() {
   let lastMouthOpenValue = 0;
   
   // スムージング係数
-  const smoothingFactor = 0.6; // 値を大きくして反応を早く（0.5→0.6）
+  const smoothingFactor = 0.8; // 値を大きくして反応を早く（0.6→0.8）
   
   // 口の開閉を時間単位でシミュレートする値
   let time = 0;
@@ -623,16 +658,23 @@ function performDummyLipSync() {
   lipSyncInterval = setInterval(() => {
     time += 0.1;
     
-    // サイン波に乱数を加えて不規則な動きにする
+    // より複雑なパターンを生成（単純なサイン波ではなく、複数の周波数を組み合わせる）
+    const pattern1 = Math.sin(time * 5) * 0.5;   // ゆっくりした基本波
+    const pattern2 = Math.sin(time * 12) * 0.3;  // 速い変化の波
+    const pattern3 = Math.sin(time * 20) * 0.2;  // さらに速い変化
+    
+    // 不規則なノイズを加える
     const noise = Math.random() * 0.3;
     
-    // より自然な口の動きを生成（複数の周波数を組み合わせる）
-    const rawValue = (Math.abs(Math.sin(time * 5)) * 0.5 + Math.abs(Math.sin(time * 8)) * 0.3) + noise;
+    // 複数のパターンを組み合わせて、さらに不規則さを加える
+    const rawValue = Math.abs(pattern1 + pattern2 * noise + pattern3 * (noise * 0.5));
+    
+    // 値の範囲を調整
     const targetValue = Math.min(rawValue, 1);
     
-    // しきい値を設けて、低い値では完全に口を閉じる
+    // しきい値を設けて、低い値では完全に口を閉じる（パクパク感を強調）
     let finalValue;
-    if (targetValue < 0.2) {
+    if (targetValue < 0.15) {
       finalValue = 0;
     } else {
       finalValue = targetValue;
@@ -645,7 +687,7 @@ function performDummyLipSync() {
     // パラメータ適用
     applyMouthOpenValue(mouthOpenValue);
     
-  }, 25); // 更新頻度を上げる（33ms→25ms、約40FPS）
+  }, 20); // 更新頻度をさらに上げる（25ms→20ms、約50FPS）
   
   // 5秒後に停止（実際の音声長に合わせる場合は調整）
   setTimeout(() => {
@@ -668,8 +710,8 @@ function applyMouthOpenValue(value) {
     'Param_mouth_open_y'
   ];
   
-  // 口の開きを大きくするために値を増幅（2.0倍に増幅）
-  const amplifiedValue = Math.min(value * 2.0, 1);
+  // 口の開きを大きくするために値を増幅（2.5倍に増幅）
+  const amplifiedValue = Math.min(value * 2.5, 1);
   
   // すべてのパラメータを試す
   let applied = false;
