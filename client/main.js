@@ -486,7 +486,14 @@ async function playVoice(audioUrl) {
       showDebugInfo(`音声データのデコード完了: 長さ ${audioBuffer.duration.toFixed(2)}秒`);
       
       // 事前解析モードを使用して口の動きデータを生成
-      await preAnalyzeAudio(audioBuffer);
+      showDebugInfo('音声の事前解析を開始...');
+      try {
+        await preAnalyzeAudio(audioBuffer);
+        showDebugInfo('音声の事前解析が完了しました');
+      } catch (analyzeError) {
+        showDebugInfo(`音声の事前解析に失敗: ${analyzeError.message}`);
+        // 事前解析に失敗した場合でも、通常の再生とリアルタイム解析を試みる
+      }
       
       // 前の音声が再生中なら停止
       if (audioSource) {
@@ -543,135 +550,148 @@ async function playVoice(audioUrl) {
 
 // 音声データを事前解析して口の動きデータを生成
 async function preAnalyzeAudio(audioBuffer) {
-  showDebugInfo('音声の事前解析を開始...');
-  
-  // 解析間隔（秒）- 10msごとにサンプリング
-  const analyzeInterval = 0.01;
-  const audioLength = audioBuffer.duration;
-  const sampleCount = Math.ceil(audioLength / analyzeInterval);
-  
-  // 口の動きデータを格納する配列
-  preAnalyzedMouthData = [];
-  
-  // オフラインの音声コンテキストを作成（高速処理のため）
-  const offlineCtx = new OfflineAudioContext(
-    audioBuffer.numberOfChannels,
-    audioBuffer.length,
-    audioBuffer.sampleRate
-  );
-  
-  // ソースノードとアナライザーノードを作成
-  const source = offlineCtx.createBufferSource();
-  source.buffer = audioBuffer;
-  
-  const analyser = offlineCtx.createAnalyser();
-  analyser.fftSize = 2048;
-  
-  // ノードを接続
-  source.connect(analyser);
-  analyser.connect(offlineCtx.destination);
-  
-  // 周波数データバッファを作成
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  
-  // 母音の周波数帯域に重点を置くウェイト
-  const frequencyWeights = createFrequencyWeights(bufferLength, offlineCtx.sampleRate, analyser.fftSize);
-  
-  // リップシンクのパラメータを設定
-  const volumeThreshold = 8;  // 音量しきい値
-  const amplificationFactor = 3.8;  // 口の開き具合の増幅率（さらに増幅）
-  
-  // 時間変数と音量履歴
-  let time = 0;
-  const volumeHistory = new Array(8).fill(0);
-  let historyIndex = 0;
-  
-  // 口の動きにリズムを加えるパターン
-  const rhythmPatterns = [
-    { frequency: 4, amplitude: 0.15 },
-    { frequency: 8, amplitude: 0.1 },
-    { frequency: 12, amplitude: 0.07 },
-    { frequency: 2, amplitude: 0.05 }
-  ];
-  
-  // 音声を少しずつ処理
-  source.start(0);
-  
-  // オフラインレンダリングを実行しながら解析
-  let currentTime = 0;
-  
-  while (currentTime < audioLength) {
-    // オフラインコンテキストで指定時間までレンダリング
-    await offlineCtx.suspend(currentTime);
+  try {
+    showDebugInfo('音声の事前解析を開始...');
     
-    // 周波数データを取得
-    analyser.getByteFrequencyData(dataArray);
+    // 解析間隔（秒）- 10msごとにサンプリング
+    const analyzeInterval = 0.01;
+    const audioLength = audioBuffer.duration;
+    const sampleCount = Math.ceil(audioLength / analyzeInterval);
     
-    // 母音の周波数帯域を重点的に解析
-    let totalVolume = 0;
-    let count = 0;
+    // 口の動きデータを格納する配列
+    preAnalyzedMouthData = [];
     
-    for (let i = 2; i < Math.min(150, bufferLength); i++) {
-      totalVolume += dataArray[i] * frequencyWeights[i];
-      count++;
-    }
+    // オフラインの音声コンテキストを作成（高速処理のため）
+    const offlineCtx = new OfflineAudioContext(
+      audioBuffer.numberOfChannels,
+      audioBuffer.length,
+      audioBuffer.sampleRate
+    );
     
-    // 音量の平均値を計算
-    const average = count > 0 ? totalVolume / count : 0;
+    // ソースノードとアナライザーノードを作成
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
     
-    // 音量履歴を更新
-    volumeHistory[historyIndex] = average;
-    historyIndex = (historyIndex + 1) % volumeHistory.length;
+    const analyser = offlineCtx.createAnalyser();
+    analyser.fftSize = 2048;
     
-    // 時間変数を更新
-    time += analyzeInterval * 10; // 変調用の時間パラメータ
+    // ノードを接続
+    source.connect(analyser);
+    analyser.connect(offlineCtx.destination);
     
-    // 口の開き具合を計算
-    let mouthOpenValue;
-    if (average < volumeThreshold) {
-      mouthOpenValue = 0; // しきい値未満なら口を閉じる
-    } else {
-      // 基本値：音量をスケーリングしてamplificationFactor倍に
-      const baseValue = Math.min(1.0, (average - volumeThreshold) / 80 * amplificationFactor);
+    // 周波数データバッファを作成
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    // 母音の周波数帯域に重点を置くウェイト
+    const frequencyWeights = createFrequencyWeights(bufferLength, offlineCtx.sampleRate, analyser.fftSize);
+    
+    // リップシンクのパラメータを設定
+    const volumeThreshold = 8;  // 音量しきい値
+    const amplificationFactor = 3.8;  // 口の開き具合の増幅率（さらに増幅）
+    
+    // 時間変数と音量履歴
+    let time = 0;
+    const volumeHistory = new Array(8).fill(0);
+    let historyIndex = 0;
+    
+    // 口の動きにリズムを加えるパターン
+    const rhythmPatterns = [
+      { frequency: 4, amplitude: 0.15 },
+      { frequency: 8, amplitude: 0.1 },
+      { frequency: 12, amplitude: 0.07 },
+      { frequency: 2, amplitude: 0.05 }
+    ];
+    
+    // 音声を開始
+    source.start(0);
+    
+    // 現在の解析位置
+    let currentTime = 0;
+    
+    // renderやsuspendの前に先にstartしておく
+    const renderPromise = offlineCtx.startRendering();
+    
+    // オフラインコンテキストで一定間隔ごとにデータを取得
+    while (currentTime < audioLength) {
+      await offlineCtx.suspend(currentTime);
       
-      // 複数のリズムパターンを組み合わせて、より自然な周期的変調を追加
-      let modulation = 0;
-      rhythmPatterns.forEach(pattern => {
-        modulation += Math.sin(time * pattern.frequency) * pattern.amplitude;
+      // 周波数データを取得
+      analyser.getByteFrequencyData(dataArray);
+      
+      // 母音の周波数帯域を重点的に解析
+      let totalVolume = 0;
+      let count = 0;
+      
+      for (let i = 2; i < Math.min(150, bufferLength); i++) {
+        totalVolume += dataArray[i] * frequencyWeights[i];
+        count++;
+      }
+      
+      // 音量の平均値を計算
+      const average = count > 0 ? totalVolume / count : 0;
+      
+      // 音量履歴を更新
+      volumeHistory[historyIndex] = average;
+      historyIndex = (historyIndex + 1) % volumeHistory.length;
+      
+      // 時間変数を更新
+      time += analyzeInterval * 10; // 変調用の時間パラメータ
+      
+      // 口の開き具合を計算
+      let mouthOpenValue;
+      if (average < volumeThreshold) {
+        mouthOpenValue = 0; // しきい値未満なら口を閉じる
+      } else {
+        // 基本値：音量をスケーリングしてamplificationFactor倍に
+        const baseValue = Math.min(1.0, (average - volumeThreshold) / 80 * amplificationFactor);
+        
+        // 複数のリズムパターンを組み合わせて、より自然な周期的変調を追加
+        let modulation = 0;
+        rhythmPatterns.forEach(pattern => {
+          modulation += Math.sin(time * pattern.frequency) * pattern.amplitude;
+        });
+        
+        // 音量の変化率も加味（ダイナミクスを強調）
+        const volumeVariation = Math.max(0, Math.min(0.35, getVolumeVariation(volumeHistory) * 2.5));
+        
+        // 基本値 + 変調 + 音量変化率
+        mouthOpenValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
+        
+        // 音節の区切りをより明確にするために、音量の閾値に応じた追加処理
+        if (average > volumeThreshold * 3) {
+          // 大きな音量変化があれば口をより大きく開ける（子音など）
+          mouthOpenValue = Math.min(mouthOpenValue * 1.3, 1);
+        }
+      }
+      
+      // 口の動きデータを配列に追加
+      preAnalyzedMouthData.push({
+        time: currentTime,
+        value: mouthOpenValue
       });
       
-      // 音量の変化率も加味（ダイナミクスを強調）
-      const volumeVariation = Math.max(0, Math.min(0.35, getVolumeVariation(volumeHistory) * 2.5));
-      
-      // 基本値 + 変調 + 音量変化率
-      mouthOpenValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
-      
-      // 音節の区切りをより明確にするために、音量の閾値に応じた追加処理
-      if (average > volumeThreshold * 3) {
-        // 大きな音量変化があれば口をより大きく開ける（子音など）
-        mouthOpenValue = Math.min(mouthOpenValue * 1.3, 1);
-      }
+      // 次の時間へ進む
+      currentTime += analyzeInterval;
+      offlineCtx.resume();
     }
     
-    // 口の動きデータを配列に追加
-    preAnalyzedMouthData.push({
-      time: currentTime,
-      value: mouthOpenValue
-    });
+    // レンダリングの完了を待つ
+    await renderPromise;
     
-    // 次の時間へ進む
-    currentTime += analyzeInterval;
-    offlineCtx.resume();
+    // 音声データの事前解析が完了したことを通知
+    showDebugInfo(`音声の事前解析が完了しました: ${preAnalyzedMouthData.length}フレーム生成`);
+    
+    // 口の動きをより自然にするための後処理（スムージング）
+    smoothMouthData();
+    
+    return preAnalyzedMouthData;
+  } catch (error) {
+    showDebugInfo(`事前解析中にエラーが発生しました: ${error.message}`);
+    console.error('事前解析エラー:', error);
+    // エラーを上位に伝播
+    throw error;
   }
-  
-  // 音声データの事前解析が完了したことを通知
-  showDebugInfo(`音声の事前解析が完了しました: ${preAnalyzedMouthData.length}フレーム生成`);
-  
-  // 口の動きをより自然にするための後処理（スムージング）
-  smoothMouthData();
-  
-  return preAnalyzedMouthData;
 }
 
 // 口の動きデータをスムージング処理する関数
