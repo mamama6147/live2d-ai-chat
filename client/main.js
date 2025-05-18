@@ -630,11 +630,14 @@ function applyMouthOpenValue(value) {
     'Param_mouth_open_y'
   ];
   
+  // 口の開きを大きくするために値を増幅（1.5倍に増幅）
+  const amplifiedValue = Math.min(value * 1.5, 1);
+  
   // すべてのパラメータを試す
   let applied = false;
   mouthParams.forEach(param => {
     try {
-      model.internalModel.coreModel.setParameterValueById(param, value);
+      model.internalModel.coreModel.setParameterValueById(param, amplifiedValue);
       applied = true;
     } catch (e) {
       // このパラメータがなければスキップ
