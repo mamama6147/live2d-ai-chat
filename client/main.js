@@ -484,7 +484,7 @@ async function playVoice(audioUrl) {
       
       // リップシンク用のAnalyserNodeを作成
       analyser = audioContext.createAnalyser();
-      analyser.fftSize = 512; // より詳細な解析のために増加（元は256）
+      analyser.fftSize = 1024; // より詳細な解析のために増加（元は512）
       
       // 接続: ソース → アナライザー → 出力
       audioSource.connect(analyser);
@@ -523,7 +523,15 @@ function startLipSyncAnimation() {
   
   // 前回の値を保持して滑らかに変化させる
   let lastMouthOpenValue = 0;
-  const smoothingFactor = 0.5; // 値を大きくして反応を早く（0.3→0.5）
+  // 音量しきい値（これより小さい音量では口を閉じる）
+  const volumeThreshold = 15;
+  // 滑らかさ調整係数（値が大きいほど反応が早い）
+  const smoothingFactor = 0.6; 
+  // 口の開閉を増幅する係数
+  const amplificationFactor = 2.5;
+  
+  // デバッグ用の音量表示頻度を制限するためのカウンタ
+  let debugCounter = 0;
   
   // リップシンク用のアニメーションフレーム関数
   function animateMouth() {
@@ -536,27 +544,39 @@ function startLipSyncAnimation() {
     analyser.getByteFrequencyData(dataArray);
     
     // 音声の特徴を抽出（低域〜中域の周波数に注目）
-    let lowMidSum = 0;
+    let totalVolume = 0;
     let count = 0;
     
     // 人間の声に関連する周波数帯に重点を置く（およそ80Hz〜3000Hz）
     for (let i = 2; i < Math.min(75, bufferLength); i++) {
-      lowMidSum += dataArray[i];
+      totalVolume += dataArray[i];
       count++;
     }
     
     // 音量の平均値を計算
-    const average = count > 0 ? lowMidSum / count : 0;
+    const average = count > 0 ? totalVolume / count : 0;
     
-    // 音量に応じて口の開閉度を調整（感度を上げる）
-    const targetMouthValue = Math.min(average / 80, 1); // 感度調整（100→80）
+    // 音量が小さい場合は口を閉じる方向に動かす
+    let targetMouthValue;
+    if (average < volumeThreshold) {
+      targetMouthValue = 0; // しきい値未満なら口を閉じる
+    } else {
+      // しきい値以上なら音量に応じて口を開く
+      // 音量に応じて口の開閉度を調整（感度と増幅を調整）
+      targetMouthValue = Math.min((average - volumeThreshold) / 80 * amplificationFactor, 1);
+    }
     
-    // スムージングを行うが、より速い反応を実現
+    // スムージングを行うが、反応速度を改善
     const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetMouthValue - lastMouthOpenValue);
     lastMouthOpenValue = mouthOpenValue;
     
     // モデルに適用
     applyMouthOpenValue(mouthOpenValue);
+    
+    // デバッグ情報（10フレームに1回だけ表示して負荷を減らす）
+    if (DEBUG_MODE && ++debugCounter % 10 === 0) {
+      showDebugInfo(`音量: ${average.toFixed(2)}, 口の開き: ${mouthOpenValue.toFixed(2)}`);
+    }
   }
   
   // アニメーション開始
@@ -594,7 +614,7 @@ function performDummyLipSync() {
   let lastMouthOpenValue = 0;
   
   // スムージング係数
-  const smoothingFactor = 0.5; // 値を大きくして反応を早く（0.3→0.5）
+  const smoothingFactor = 0.6; // 値を大きくして反応を早く（0.5→0.6）
   
   // 口の開閉を時間単位でシミュレートする値
   let time = 0;
@@ -610,14 +630,22 @@ function performDummyLipSync() {
     const rawValue = (Math.abs(Math.sin(time * 5)) * 0.5 + Math.abs(Math.sin(time * 8)) * 0.3) + noise;
     const targetValue = Math.min(rawValue, 1);
     
+    // しきい値を設けて、低い値では完全に口を閉じる
+    let finalValue;
+    if (targetValue < 0.2) {
+      finalValue = 0;
+    } else {
+      finalValue = targetValue;
+    }
+    
     // スムージング処理
-    const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetValue - lastMouthOpenValue);
+    const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (finalValue - lastMouthOpenValue);
     lastMouthOpenValue = mouthOpenValue;
     
     // パラメータ適用
     applyMouthOpenValue(mouthOpenValue);
     
-  }, 33); // 更新頻度を上げる（50ms→33ms、約30FPS）
+  }, 25); // 更新頻度を上げる（33ms→25ms、約40FPS）
   
   // 5秒後に停止（実際の音声長に合わせる場合は調整）
   setTimeout(() => {
@@ -640,7 +668,7 @@ function applyMouthOpenValue(value) {
     'Param_mouth_open_y'
   ];
   
-  // 口の開きを大きくするために値を増幅（1.5倍→2.0倍に増幅）
+  // 口の開きを大きくするために値を増幅（2.0倍に増幅）
   const amplifiedValue = Math.min(value * 2.0, 1);
   
   // すべてのパラメータを試す
