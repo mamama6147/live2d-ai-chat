@@ -484,7 +484,7 @@ async function playVoice(audioUrl) {
       
       // リップシンク用のAnalyserNodeを作成
       analyser = audioContext.createAnalyser();
-      analyser.fftSize = 1024; // より詳細な解析のために増加（元は512）
+      analyser.fftSize = 2048; // より高い解像度で解析できるよう増加（元は1024）
       
       // 接続: ソース → アナライザー → 出力
       audioSource.connect(analyser);
@@ -524,19 +524,47 @@ function startLipSyncAnimation() {
   // 前回の値を保持して滑らかに変化させる
   let lastMouthOpenValue = 0;
   // 音量しきい値（これより小さい音量では口を閉じる）
-  const volumeThreshold = 10; // 少し下げて反応を良くする（元は15）
+  const volumeThreshold = 8; // より反応しやすく（元は10）
   // 滑らかさ調整係数（値が大きいほど反応が早い）
-  const smoothingFactor = 0.8; // より反応を早く（元は0.6）
+  const smoothingFactor = 0.9; // より反応を早く（元は0.8）
   // 口の開閉を増幅する係数
-  const amplificationFactor = 3.0; // より目立つ口の動き（元は2.5）
+  const amplificationFactor = 3.5; // より目立つ口の動き（元は3.0）
   
   // 口の動きをさらに増強するための周期的な変調に使用する変数
   let time = 0;
-  const modulationSpeed = 0.2; // 変調速度
+  const modulationSpeed = 0.25; // 変調速度を上げる（元は0.2）
   
   // 音量履歴の記録用（口の動きをより自然にするため）
-  const volumeHistory = new Array(5).fill(0);
+  const volumeHistory = new Array(8).fill(0); // より長い履歴（元は5）
   let historyIndex = 0;
+  
+  // 音声の特定周波数帯に重点を置くためのウェイト設定
+  const frequencyWeights = new Array(bufferLength).fill(1);
+  
+  // 人間の声に関連する周波数帯（約80Hz〜3000Hz）に重点を置く
+  // 特に母音が集中する500Hz〜2000Hz帯域を強調
+  for (let i = 0; i < bufferLength; i++) {
+    const freq = i * audioContext.sampleRate / analyser.fftSize;
+    if (freq < 80) {
+      frequencyWeights[i] = 0.1; // 低周波数は抑制
+    } else if (freq >= 80 && freq < 500) {
+      frequencyWeights[i] = 0.8; // 低〜中域は重要
+    } else if (freq >= 500 && freq < 2000) {
+      frequencyWeights[i] = 1.5; // 母音が集中する周波数帯を強調
+    } else if (freq >= 2000 && freq < 3000) {
+      frequencyWeights[i] = 1.0; // 中〜高域も重要
+    } else {
+      frequencyWeights[i] = 0.2; // 高周波数は抑制
+    }
+  }
+  
+  // 口の開閉パターンの複雑さを増すためのパラメータ
+  const rhythmPatterns = [
+    { frequency: 4, amplitude: 0.15 },   // 基本リズム
+    { frequency: 8, amplitude: 0.1 },    // 早いリズム
+    { frequency: 12, amplitude: 0.07 },  // より細かいリズム
+    { frequency: 2, amplitude: 0.05 }    // ゆっくりとした揺らぎ
+  ];
   
   // デバッグ用のカウンタ
   let debugCounter = 0;
@@ -551,13 +579,13 @@ function startLipSyncAnimation() {
     // 周波数データの取得
     analyser.getByteFrequencyData(dataArray);
     
-    // 音声の特徴を抽出（低域〜中域の周波数に注目）
+    // 音声の特徴を抽出（重み付けした周波数解析）
     let totalVolume = 0;
     let count = 0;
     
     // 人間の声に関連する周波数帯に重点を置く（およそ80Hz〜3000Hz）
-    for (let i = 2; i < Math.min(75, bufferLength); i++) {
-      totalVolume += dataArray[i];
+    for (let i = 2; i < Math.min(150, bufferLength); i++) {
+      totalVolume += dataArray[i] * frequencyWeights[i];
       count++;
     }
     
@@ -577,16 +605,24 @@ function startLipSyncAnimation() {
       targetMouthValue = 0; // しきい値未満なら口を閉じる
     } else {
       // しきい値以上なら音量に応じて口を開く
-      // 音量に応じて口の開閉度を調整（感度と増幅を調整）
-      // 周期的な変調を追加して、音声中でも口が動き続けるようにする
-      const baseValue = (average - volumeThreshold) / 70 * amplificationFactor;
-      const modulation = Math.sin(time * 8) * 0.15 + Math.sin(time * 12) * 0.1;
+      // 基本値：音量をスケーリングしてamplificationFactor倍に
+      const baseValue = Math.min(1.0, (average - volumeThreshold) / 80 * amplificationFactor);
       
-      // 口の動きが単調にならないよう、音量の変化率も考慮
-      const volumeVariation = Math.max(0, Math.min(0.3, getVolumeVariation(volumeHistory) * 2));
+      // 複数のリズムパターンを組み合わせて、より自然な周期的変調を追加
+      let modulation = 0;
+      rhythmPatterns.forEach(pattern => {
+        modulation += Math.sin(time * pattern.frequency) * pattern.amplitude;
+      });
       
-      // 基本値 + 変調 + 音量変化率に基づく追加の動き
-      targetMouthValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
+      // 音量の変化率も加味（ダイナミクスを強調）
+      const volumeVariation = Math.max(0, Math.min(0.35, getVolumeVariation(volumeHistory) * 2.5));
+      
+      // 音量の急な変化に対してさらに口を開く（子音などの認識向上）
+      const volumeChange = getRecentVolumeChange(volumeHistory);
+      const accentFactor = volumeChange > 10 ? Math.min(0.2, volumeChange / 100) : 0;
+      
+      // 基本値 + 変調 + 音量変化率 + アクセント（急な変化）
+      targetMouthValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation + accentFactor), 1);
     }
     
     // スムージングを行うが、反応速度を改善
@@ -612,6 +648,18 @@ function startLipSyncAnimation() {
     }
     
     return totalDiff / (history.length - 1) / 100; // 正規化
+  }
+  
+  // 最近の音量変化を計算（急な変化を検出するため）
+  function getRecentVolumeChange(history) {
+    if (history.length < 3) return 0;
+    
+    // 直近3サンプルのみで計算
+    const i = historyIndex;
+    const prev = history[(i - 1 + history.length) % history.length];
+    const current = history[i];
+    
+    return Math.abs(current - prev);
   }
   
   // アニメーション開始
@@ -649,7 +697,7 @@ function performDummyLipSync() {
   let lastMouthOpenValue = 0;
   
   // スムージング係数
-  const smoothingFactor = 0.8; // 値を大きくして反応を早く（0.6→0.8）
+  const smoothingFactor = 0.9; // 値を大きくして反応を早く（0.8→0.9）
   
   // 口の開閉を時間単位でシミュレートする値
   let time = 0;
@@ -659,20 +707,26 @@ function performDummyLipSync() {
     time += 0.1;
     
     // より複雑なパターンを生成（単純なサイン波ではなく、複数の周波数を組み合わせる）
-    const pattern1 = Math.sin(time * 5) * 0.5;   // ゆっくりした基本波
-    const pattern2 = Math.sin(time * 12) * 0.3;  // 速い変化の波
-    const pattern3 = Math.sin(time * 20) * 0.2;  // さらに速い変化
+    // 基本リズムパターン（ゆっくり）
+    const pattern1 = Math.sin(time * 5) * 0.5;
+    // 細かいリズムパターン（速い）
+    const pattern2 = Math.sin(time * 12) * 0.3;
+    // さらに細かいリズムパターン（より速い）
+    const pattern3 = Math.sin(time * 20) * 0.2;
+    // 非常にゆっくりとした揺らぎ（全体の動きに緩やかな変化を加える）
+    const pattern4 = Math.sin(time * 0.8) * 0.15;
     
     // 不規則なノイズを加える
     const noise = Math.random() * 0.3;
     
     // 複数のパターンを組み合わせて、さらに不規則さを加える
-    const rawValue = Math.abs(pattern1 + pattern2 * noise + pattern3 * (noise * 0.5));
+    const rawValue = Math.abs(pattern1 + pattern2 * noise + pattern3 * (noise * 0.5) + pattern4);
     
     // 値の範囲を調整
     const targetValue = Math.min(rawValue, 1);
     
-    // しきい値を設けて、低い値では完全に口を閉じる（パクパク感を強調）
+    // 口を開閉するタイミングをよりはっきりさせるため、しきい値を設定
+    // 0.15未満なら口を完全に閉じる（これにより「パクパク」感が強調される）
     let finalValue;
     if (targetValue < 0.15) {
       finalValue = 0;
@@ -680,14 +734,14 @@ function performDummyLipSync() {
       finalValue = targetValue;
     }
     
-    // スムージング処理
+    // スムージング処理を高速化
     const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (finalValue - lastMouthOpenValue);
     lastMouthOpenValue = mouthOpenValue;
     
     // パラメータ適用
     applyMouthOpenValue(mouthOpenValue);
     
-  }, 20); // 更新頻度をさらに上げる（25ms→20ms、約50FPS）
+  }, 15); // 更新頻度をさらに上げる（20ms→15ms、約66.7FPS）
   
   // 5秒後に停止（実際の音声長に合わせる場合は調整）
   setTimeout(() => {
@@ -710,8 +764,9 @@ function applyMouthOpenValue(value) {
     'Param_mouth_open_y'
   ];
   
-  // 口の開きを大きくするために値を増幅（2.5倍に増幅）
-  const amplifiedValue = Math.min(value * 2.5, 1);
+  // 口の開きを大きくするために値を増幅
+  // 増幅率を上げるとより口が大きく開くが、最大値は1.0に制限される
+  const amplifiedValue = Math.min(value * 3.5, 1);
   
   // すべてのパラメータを試す
   let applied = false;
