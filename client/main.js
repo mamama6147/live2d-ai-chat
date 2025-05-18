@@ -434,20 +434,6 @@ async function playVoice(audioUrl) {
     return;
   }
   
-  // 単純口パクモードが有効になっている場合
-  if (lipSyncMode === 'simple') {
-    showDebugInfo('単純口パクモードを使用します');
-    performSimpleMouthAnimation();
-    return;
-  }
-  
-  // ダミーモードが指定された場合
-  if (lipSyncMode === 'dummy') {
-    showDebugInfo('ダミーリップシンクモードを使用します');
-    performDummyLipSync();
-    return;
-  }
-  
   // モデルがロードされていない場合
   if (!model) {
     showDebugInfo('モデルが読み込まれていないため、リップシンクできません');
@@ -506,14 +492,36 @@ async function playVoice(audioUrl) {
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       showDebugInfo(`音声データのデコード完了: 長さ ${audioBuffer.duration.toFixed(2)}秒`);
       
-      // 事前解析モードを使用して口の動きデータを生成
-      showDebugInfo('音声の事前解析を開始...');
-      try {
-        await preAnalyzeAudio(audioBuffer);
-        showDebugInfo('音声の事前解析が完了しました');
-      } catch (analyzeError) {
-        showDebugInfo(`音声の事前解析に失敗: ${analyzeError.message}`);
-        // 事前解析に失敗した場合でも、通常の再生とリアルタイム解析を試みる
+      // 単純口パクモードが有効になっている場合
+      if (lipSyncMode === 'simple') {
+        showDebugInfo('単純口パクモードを使用します');
+        performSimpleMouthAnimation(audioBuffer.duration);
+      } else if (lipSyncMode === 'dummy') {
+        // ダミーモードが指定された場合
+        showDebugInfo('ダミーリップシンクモードを使用します');
+        performDummyLipSync();
+      } else {
+        // 自動/音声解析モードの場合
+        
+        // 事前解析モードを使用して口の動きデータを生成
+        showDebugInfo('音声の事前解析を開始...');
+        try {
+          await preAnalyzeAudio(audioBuffer);
+          showDebugInfo('音声の事前解析が完了しました');
+        } catch (analyzeError) {
+          showDebugInfo(`音声の事前解析に失敗: ${analyzeError.message}`);
+          // 事前解析に失敗した場合でも、通常の再生とリアルタイム解析を試みる
+        }
+        
+        // 事前解析データを使用したリップシンクアニメーションを準備
+        usingPreAnalyzedData = preAnalyzedMouthData && preAnalyzedMouthData.length > 0;
+        if (usingPreAnalyzedData) {
+          showDebugInfo(`事前解析データを使用したリップシンクを開始: ${preAnalyzedMouthData.length}フレーム`);
+          startPreAnalyzedLipSync();
+        } else {
+          showDebugInfo('リアルタイム解析によるリップシンクを開始');
+          startLipSyncAnimation();
+        }
       }
       
       // 前の音声が再生中なら停止
@@ -547,16 +555,6 @@ async function playVoice(audioUrl) {
       // 応答受信ログを音声再生開始と同時に表示
       if (aiResponse) {
         showDebugInfo(`応答受信: ${aiResponse}`);
-      }
-      
-      // 事前解析データを使用したリップシンクアニメーションを準備
-      usingPreAnalyzedData = preAnalyzedMouthData && preAnalyzedMouthData.length > 0;
-      if (usingPreAnalyzedData) {
-        showDebugInfo(`事前解析データを使用したリップシンクを開始: ${preAnalyzedMouthData.length}フレーム`);
-        startPreAnalyzedLipSync();
-      } else {
-        showDebugInfo('リアルタイム解析によるリップシンクを開始');
-        startLipSyncAnimation();
       }
       
       // 再生開始時間を記録
@@ -924,7 +922,7 @@ function stopCurrentLipSync() {
 }
 
 // 単純な口パクアニメーションを実行する関数（新機能）
-function performSimpleMouthAnimation() {
+function performSimpleMouthAnimation(duration = 8) {
   showDebugInfo('単純口パクアニメーションを開始します');
   
   // まず現在実行中のリップシンクをすべて停止
@@ -1003,13 +1001,14 @@ function performSimpleMouthAnimation() {
   // アニメーション開始
   animateSimpleMouth();
   
-  // 8秒後に自動的に停止（デフォルトの音声長さに合わせて調整可能）
+  // 音声の長さに基づいて自動的に停止（デフォルトは8秒）
+  const animationDuration = duration ? duration * 1000 : 8000;
   setTimeout(() => {
     if (simpleMouthAnimationActive) {
       stopCurrentLipSync();
       showDebugInfo('単純口パクアニメーション完了');
     }
-  }, 8000);
+  }, animationDuration);
 }
 
 // ダミーのリップシンク（音声ファイルがない場合やエラー時）
