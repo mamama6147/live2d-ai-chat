@@ -484,7 +484,7 @@ async function playVoice(audioUrl) {
       
       // リップシンク用のAnalyserNodeを作成
       analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 512; // より詳細な解析のために増加（元は256）
       
       // 接続: ソース → アナライザー → 出力
       audioSource.connect(analyser);
@@ -523,7 +523,7 @@ function startLipSyncAnimation() {
   
   // 前回の値を保持して滑らかに変化させる
   let lastMouthOpenValue = 0;
-  const smoothingFactor = 0.3; // 値が小さいほどスムーズになる
+  const smoothingFactor = 0.5; // 値を大きくして反応を早く（0.3→0.5）
   
   // リップシンク用のアニメーションフレーム関数
   function animateMouth() {
@@ -535,15 +535,23 @@ function startLipSyncAnimation() {
     // 周波数データの取得
     analyser.getByteFrequencyData(dataArray);
     
-    // 音量の平均値を計算
-    let sum = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      sum += dataArray[i];
+    // 音声の特徴を抽出（低域〜中域の周波数に注目）
+    let lowMidSum = 0;
+    let count = 0;
+    
+    // 人間の声に関連する周波数帯に重点を置く（およそ80Hz〜3000Hz）
+    for (let i = 2; i < Math.min(75, bufferLength); i++) {
+      lowMidSum += dataArray[i];
+      count++;
     }
-    const average = sum / bufferLength;
+    
+    // 音量の平均値を計算
+    const average = count > 0 ? lowMidSum / count : 0;
     
     // 音量に応じて口の開閉度を調整（感度を上げる）
-    const targetMouthValue = Math.min(average / 100, 1); // 感度調整
+    const targetMouthValue = Math.min(average / 80, 1); // 感度調整（100→80）
+    
+    // スムージングを行うが、より速い反応を実現
     const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (targetMouthValue - lastMouthOpenValue);
     lastMouthOpenValue = mouthOpenValue;
     
@@ -586,7 +594,7 @@ function performDummyLipSync() {
   let lastMouthOpenValue = 0;
   
   // スムージング係数
-  const smoothingFactor = 0.3;
+  const smoothingFactor = 0.5; // 値を大きくして反応を早く（0.3→0.5）
   
   // 口の開閉を時間単位でシミュレートする値
   let time = 0;
@@ -597,7 +605,9 @@ function performDummyLipSync() {
     
     // サイン波に乱数を加えて不規則な動きにする
     const noise = Math.random() * 0.3;
-    const rawValue = Math.abs(Math.sin(time * 5)) * 0.7 + noise;
+    
+    // より自然な口の動きを生成（複数の周波数を組み合わせる）
+    const rawValue = (Math.abs(Math.sin(time * 5)) * 0.5 + Math.abs(Math.sin(time * 8)) * 0.3) + noise;
     const targetValue = Math.min(rawValue, 1);
     
     // スムージング処理
@@ -607,7 +617,7 @@ function performDummyLipSync() {
     // パラメータ適用
     applyMouthOpenValue(mouthOpenValue);
     
-  }, 50); // 更新頻度
+  }, 33); // 更新頻度を上げる（50ms→33ms、約30FPS）
   
   // 5秒後に停止（実際の音声長に合わせる場合は調整）
   setTimeout(() => {
@@ -630,8 +640,8 @@ function applyMouthOpenValue(value) {
     'Param_mouth_open_y'
   ];
   
-  // 口の開きを大きくするために値を増幅（1.5倍に増幅）
-  const amplifiedValue = Math.min(value * 1.5, 1);
+  // 口の開きを大きくするために値を増幅（1.5倍→2.0倍に増幅）
+  const amplifiedValue = Math.min(value * 2.0, 1);
   
   // すべてのパラメータを試す
   let applied = false;
