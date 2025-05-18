@@ -13,6 +13,7 @@ let preAnalyzedMouthData = null; // 事前解析した口の動きデータ
 let audioPlaybackStartTime = 0; // 音声再生開始時間
 let usingPreAnalyzedData = false; // 事前解析データを使用しているかのフラグ
 let aiResponse = null; // AI応答文を保持
+let simpleMouthAnimationActive = false; // 単純口パクアニメーション実行中フラグ
 
 // APIのベースURL
 const API_BASE_URL = 'http://localhost:3000';
@@ -430,6 +431,13 @@ async function playVoice(audioUrl) {
   // リップシンクモードがオフの場合
   if (lipSyncMode === 'off') {
     showDebugInfo('リップシンクはオフに設定されています');
+    return;
+  }
+  
+  // 単純口パクモードが有効になっている場合
+  if (lipSyncMode === 'simple') {
+    showDebugInfo('単純口パクモードを使用します');
+    performSimpleMouthAnimation();
     return;
   }
   
@@ -902,6 +910,9 @@ function stopCurrentLipSync() {
     animationFrameId = null;
   }
   
+  // 単純口パクアニメーションを停止
+  simpleMouthAnimationActive = false;
+  
   // 事前解析データをクリア
   preAnalyzedMouthData = null;
   usingPreAnalyzedData = false;
@@ -910,6 +921,95 @@ function stopCurrentLipSync() {
   applyMouthOpenValue(0);
   
   showDebugInfo('リップシンクを停止しました');
+}
+
+// 単純な口パクアニメーションを実行する関数（新機能）
+function performSimpleMouthAnimation() {
+  showDebugInfo('単純口パクアニメーションを開始します');
+  
+  // まず現在実行中のリップシンクをすべて停止
+  stopCurrentLipSync();
+  
+  // 単純口パクのステート
+  let state = 'closed'; // 初期状態は閉じている
+  let mouthValue = 0;   // 口の開き具合（0-1）
+  
+  // 口の動作設定
+  const openDuration = 200;   // 開く時間（ms）
+  const closeDuration = 200;  // 閉じる時間（ms）
+  const closedDuration = 200; // 閉じたまま待機する時間（ms）
+  
+  // 単純アニメーション実行中フラグをオン
+  simpleMouthAnimationActive = true;
+  
+  // 単純口パクアニメーションのタイマー
+  function animateSimpleMouth() {
+    // アニメーションフレームIDを保存
+    animationFrameId = requestAnimationFrame(() => {
+      // 実行中フラグがオフなら終了
+      if (!simpleMouthAnimationActive) {
+        return;
+      }
+      
+      switch (state) {
+        case 'closed':
+          // 閉じた状態から開き始める
+          state = 'opening';
+          mouthValue = 0;
+          break;
+          
+        case 'opening':
+          // 徐々に口を開く
+          mouthValue += 1 / (openDuration / 16); // 16msは約60FPS
+          if (mouthValue >= 1) {
+            mouthValue = 1;
+            state = 'closing';
+          }
+          break;
+          
+        case 'closing':
+          // 徐々に口を閉じる
+          mouthValue -= 1 / (closeDuration / 16);
+          if (mouthValue <= 0) {
+            mouthValue = 0;
+            state = 'waiting';
+            // 待機時間経過後に再度開き始める
+            setTimeout(() => {
+              if (simpleMouthAnimationActive) {
+                state = 'closed';
+              }
+            }, closedDuration);
+          }
+          break;
+          
+        case 'waiting':
+          // 閉じたまま待機中は何もしない
+          break;
+      }
+      
+      // モデルに口の開き具合を適用
+      applyMouthOpenValue(mouthValue);
+      
+      // アニメーションを継続
+      animateSimpleMouth();
+    });
+  }
+  
+  // 応答受信ログを表示
+  if (aiResponse) {
+    showDebugInfo(`応答受信: ${aiResponse}`);
+  }
+  
+  // アニメーション開始
+  animateSimpleMouth();
+  
+  // 8秒後に自動的に停止（デフォルトの音声長さに合わせて調整可能）
+  setTimeout(() => {
+    if (simpleMouthAnimationActive) {
+      stopCurrentLipSync();
+      showDebugInfo('単純口パクアニメーション完了');
+    }
+  }, 8000);
 }
 
 // ダミーのリップシンク（音声ファイルがない場合やエラー時）
