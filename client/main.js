@@ -12,6 +12,7 @@ let testMode = false; // テストモードフラグ
 let preAnalyzedMouthData = null; // 事前解析した口の動きデータ
 let audioPlaybackStartTime = 0; // 音声再生開始時間
 let usingPreAnalyzedData = false; // 事前解析データを使用しているかのフラグ
+let aiResponse = null; // AI応答文を保持
 
 // APIのベースURL
 const API_BASE_URL = 'http://localhost:3000';
@@ -447,10 +448,22 @@ async function playVoice(audioUrl) {
 
   if (!audioContext) {
     try {
+      // AudioContextを初期化（必要に応じて再生成）
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      showDebugInfo('AudioContextを再初期化しました');
     } catch (e) {
       showDebugInfo(`AudioContextの作成に失敗: ${e.message}`);
       // AudioContextが作成できなくても、ダミーリップシンクは実行
+      performDummyLipSync();
+      return;
+    }
+  } else if (audioContext.state === 'suspended') {
+    // AudioContextが一時停止されている場合は再開
+    try {
+      await audioContext.resume();
+      showDebugInfo('AudioContextを再開しました');
+    } catch (e) {
+      showDebugInfo(`AudioContextの再開に失敗: ${e.message}`);
       performDummyLipSync();
       return;
     }
@@ -497,7 +510,11 @@ async function playVoice(audioUrl) {
       
       // 前の音声が再生中なら停止
       if (audioSource) {
-        audioSource.stop();
+        try {
+          audioSource.stop();
+        } catch (e) {
+          showDebugInfo(`既存の音声ソース停止エラー: ${e.message}`);
+        }
         audioSource = null;
       }
       
@@ -519,8 +536,10 @@ async function playVoice(audioUrl) {
         stopCurrentLipSync();
       };
       
-      // 再生開始時間を記録
-      audioPlaybackStartTime = audioContext.currentTime;
+      // 応答受信ログを音声再生開始と同時に表示
+      if (aiResponse) {
+        showDebugInfo(`応答受信: ${aiResponse}`);
+      }
       
       // 事前解析データを使用したリップシンクアニメーションを準備
       usingPreAnalyzedData = preAnalyzedMouthData && preAnalyzedMouthData.length > 0;
@@ -531,6 +550,9 @@ async function playVoice(audioUrl) {
         showDebugInfo('リアルタイム解析によるリップシンクを開始');
         startLipSyncAnimation();
       }
+      
+      // 再生開始時間を記録
+      audioPlaybackStartTime = audioContext.currentTime;
       
       // 再生開始
       audioSource.start(0);
@@ -609,75 +631,95 @@ async function preAnalyzeAudio(audioBuffer) {
     // 現在の解析位置
     let currentTime = 0;
     
-    // renderやsuspendの前に先にstartしておく
-    const renderPromise = offlineCtx.startRendering();
-    
-    // オフラインコンテキストで一定間隔ごとにデータを取得
-    while (currentTime < audioLength) {
-      await offlineCtx.suspend(currentTime);
+    try {
+      // レンダリング処理を開始 (先にrenderPromiseを作成)
+      const renderPromise = offlineCtx.startRendering();
       
-      // 周波数データを取得
-      analyser.getByteFrequencyData(dataArray);
-      
-      // 母音の周波数帯域を重点的に解析
-      let totalVolume = 0;
-      let count = 0;
-      
-      for (let i = 2; i < Math.min(150, bufferLength); i++) {
-        totalVolume += dataArray[i] * frequencyWeights[i];
-        count++;
-      }
-      
-      // 音量の平均値を計算
-      const average = count > 0 ? totalVolume / count : 0;
-      
-      // 音量履歴を更新
-      volumeHistory[historyIndex] = average;
-      historyIndex = (historyIndex + 1) % volumeHistory.length;
-      
-      // 時間変数を更新
-      time += analyzeInterval * 10; // 変調用の時間パラメータ
-      
-      // 口の開き具合を計算
-      let mouthOpenValue;
-      if (average < volumeThreshold) {
-        mouthOpenValue = 0; // しきい値未満なら口を閉じる
-      } else {
-        // 基本値：音量をスケーリングしてamplificationFactor倍に
-        const baseValue = Math.min(1.0, (average - volumeThreshold) / 80 * amplificationFactor);
-        
-        // 複数のリズムパターンを組み合わせて、より自然な周期的変調を追加
-        let modulation = 0;
-        rhythmPatterns.forEach(pattern => {
-          modulation += Math.sin(time * pattern.frequency) * pattern.amplitude;
-        });
-        
-        // 音量の変化率も加味（ダイナミクスを強調）
-        const volumeVariation = Math.max(0, Math.min(0.35, getVolumeVariation(volumeHistory) * 2.5));
-        
-        // 基本値 + 変調 + 音量変化率
-        mouthOpenValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
-        
-        // 音節の区切りをより明確にするために、音量の閾値に応じた追加処理
-        if (average > volumeThreshold * 3) {
-          // 大きな音量変化があれば口をより大きく開ける（子音など）
-          mouthOpenValue = Math.min(mouthOpenValue * 1.3, 1);
+      // オフラインコンテキストで一定間隔ごとにデータを取得
+      while (currentTime < audioLength) {
+        try {
+          await offlineCtx.suspend(currentTime);
+          
+          // 周波数データを取得
+          analyser.getByteFrequencyData(dataArray);
+          
+          // 母音の周波数帯域を重点的に解析
+          let totalVolume = 0;
+          let count = 0;
+          
+          for (let i = 2; i < Math.min(150, bufferLength); i++) {
+            totalVolume += dataArray[i] * frequencyWeights[i];
+            count++;
+          }
+          
+          // 音量の平均値を計算
+          const average = count > 0 ? totalVolume / count : 0;
+          
+          // 音量履歴を更新
+          volumeHistory[historyIndex] = average;
+          historyIndex = (historyIndex + 1) % volumeHistory.length;
+          
+          // 時間変数を更新
+          time += analyzeInterval * 10; // 変調用の時間パラメータ
+          
+          // 口の開き具合を計算
+          let mouthOpenValue;
+          if (average < volumeThreshold) {
+            mouthOpenValue = 0; // しきい値未満なら口を閉じる
+          } else {
+            // 基本値：音量をスケーリングしてamplificationFactor倍に
+            const baseValue = Math.min(1.0, (average - volumeThreshold) / 80 * amplificationFactor);
+            
+            // 複数のリズムパターンを組み合わせて、より自然な周期的変調を追加
+            let modulation = 0;
+            rhythmPatterns.forEach(pattern => {
+              modulation += Math.sin(time * pattern.frequency) * pattern.amplitude;
+            });
+            
+            // 音量の変化率も加味（ダイナミクスを強調）
+            const volumeVariation = Math.max(0, Math.min(0.35, getVolumeVariation(volumeHistory) * 2.5));
+            
+            // 基本値 + 変調 + 音量変化率
+            mouthOpenValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
+            
+            // 音節の区切りをより明確にするために、音量の閾値に応じた追加処理
+            if (average > volumeThreshold * 3) {
+              // 大きな音量変化があれば口をより大きく開ける（子音など）
+              mouthOpenValue = Math.min(mouthOpenValue * 1.3, 1);
+            }
+          }
+          
+          // 口の動きデータを配列に追加
+          preAnalyzedMouthData.push({
+            time: currentTime,
+            value: mouthOpenValue
+          });
+          
+          // 次の時間へ進む
+          currentTime += analyzeInterval;
+          
+          // コンテキストを再開
+          await offlineCtx.resume();
+        } catch (e) {
+          showDebugInfo(`事前解析のサスペンド/レジューム中にエラー: ${e.message}`);
+          // エラーが発生しても次のサンプルへ進む
+          currentTime += analyzeInterval;
         }
       }
       
-      // 口の動きデータを配列に追加
-      preAnalyzedMouthData.push({
-        time: currentTime,
-        value: mouthOpenValue
-      });
+      // レンダリングの完了を待つ
+      await renderPromise;
       
-      // 次の時間へ進む
-      currentTime += analyzeInterval;
-      offlineCtx.resume();
+    } catch (renderError) {
+      showDebugInfo(`レンダリング中にエラーが発生: ${renderError.message}`);
+      throw renderError;
     }
     
-    // レンダリングの完了を待つ
-    await renderPromise;
+    // 必要なデータが生成できたかチェック
+    if (preAnalyzedMouthData.length < 10) {
+      showDebugInfo('事前解析で十分なデータが生成できませんでした。');
+      throw new Error('事前解析データが不足しています');
+    }
     
     // 音声データの事前解析が完了したことを通知
     showDebugInfo(`音声の事前解析が完了しました: ${preAnalyzedMouthData.length}フレーム生成`);
@@ -689,6 +731,8 @@ async function preAnalyzeAudio(audioBuffer) {
   } catch (error) {
     showDebugInfo(`事前解析中にエラーが発生しました: ${error.message}`);
     console.error('事前解析エラー:', error);
+    // 事前解析データをクリア
+    preAnalyzedMouthData = null;
     // エラーを上位に伝播
     throw error;
   }
@@ -836,6 +880,12 @@ function getVolumeVariation(history) {
 
 // リップシンクアニメーションを開始する関数（リアルタイム解析）
 function startLipSyncAnimation() {
+  if (!audioContext || !analyser) {
+    showDebugInfo('オーディオコンテキストまたはアナライザーが初期化されていません');
+    performDummyLipSync();
+    return;
+  }
+  
   // バッファ長の取得
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
@@ -1049,6 +1099,11 @@ function performDummyLipSync() {
   audioPlaybackStartTime = audioContext ? audioContext.currentTime : 0;
   usingPreAnalyzedData = true;
   
+  // 応答受信ログを表示（再生開始と同時に）
+  if (aiResponse) {
+    showDebugInfo(`応答受信: ${aiResponse}`);
+  }
+  
   // 事前解析データを使用したリップシンクを開始
   startPreAnalyzedLipSync();
   
@@ -1229,7 +1284,9 @@ function setupChatUI() {
       }
 
       const data = await response.json();
-      showDebugInfo(`応答受信: ${data.reply}`);
+      
+      // AIの応答を保持（音声再生時のログ用）
+      aiResponse = data.reply;
       
       // テストモードフラグを更新（サーバー側の状態を反映）
       if (data.testMode !== undefined && testMode !== data.testMode) {
@@ -1239,14 +1296,17 @@ function setupChatUI() {
       // AIの応答をUIに追加
       addMessageToUI('ai', data.reply);
       
-      // 音声再生
-      if (data.audioUrl) {
-        playVoice(data.audioUrl);
-      }
-      
       // 表情変更などの追加処理
       if (model && data.emotion) {
         changeExpression(data.emotion);
+      }
+      
+      // 音声再生（応答受信ログは音声開始と同時に表示）
+      if (data.audioUrl) {
+        playVoice(data.audioUrl);
+      } else {
+        // 音声がない場合は即座に応答ログを表示
+        showDebugInfo(`応答受信: ${data.reply}`);
       }
 
     } catch (error) {
@@ -1282,9 +1342,15 @@ function setupTestControls() {
         // テストメッセージを表示
         addMessageToUI('ai', `【テスト】 ${data.reply}`);
         
+        // AIの応答を保持（音声再生時のログ用）
+        aiResponse = data.reply;
+        
         // 音声再生とリップシンク
         if (data.audioUrl) {
           playVoice(data.audioUrl);
+        } else {
+          // 音声がない場合は即座に応答ログを表示
+          showDebugInfo(`応答受信: ${data.reply}`);
         }
         
       } catch (error) {
