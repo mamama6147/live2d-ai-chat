@@ -628,17 +628,27 @@ async function preAnalyzeAudio(audioBuffer) {
     // 音声を開始
     source.start(0);
     
+    // レンダリング処理を開始 (先にrenderPromiseを作成)
+    const renderPromise = offlineCtx.startRendering();
+    
     // 現在の解析位置
     let currentTime = 0;
+    let lastCheckTime = 0;  // 前回チェックした時間
     
     try {
-      // レンダリング処理を開始 (先にrenderPromiseを作成)
-      const renderPromise = offlineCtx.startRendering();
-      
       // オフラインコンテキストで一定間隔ごとにデータを取得
       while (currentTime < audioLength) {
         try {
+          // 前回のチェック時間から現在の解析位置までの処理時間を確保
+          if (currentTime < lastCheckTime) {
+            currentTime = lastCheckTime;
+          }
+          
+          // suspend呼び出し前に現在の処理位置をチェック
           await offlineCtx.suspend(currentTime);
+          
+          // 現在の実際の処理位置を取得して記録
+          lastCheckTime = offlineCtx.currentTime;
           
           // 周波数データを取得
           analyser.getByteFrequencyData(dataArray);
@@ -703,6 +713,7 @@ async function preAnalyzeAudio(audioBuffer) {
         } catch (e) {
           showDebugInfo(`事前解析のサスペンド/レジューム中にエラー: ${e.message}`);
           // エラーが発生しても次のサンプルへ進む
+          // 現在の時間を更新
           currentTime += analyzeInterval;
         }
       }
@@ -716,7 +727,7 @@ async function preAnalyzeAudio(audioBuffer) {
     }
     
     // 必要なデータが生成できたかチェック
-    if (preAnalyzedMouthData.length < 10) {
+    if (!preAnalyzedMouthData || preAnalyzedMouthData.length < 10) {
       showDebugInfo('事前解析で十分なデータが生成できませんでした。');
       throw new Error('事前解析データが不足しています');
     }
