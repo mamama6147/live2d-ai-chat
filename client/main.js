@@ -9,6 +9,9 @@ let analyser; // 音声解析用のアナライザーノード
 let animationFrameId = null; // アニメーションフレームID
 let lipSyncInterval = null; // リップシンクタイマー
 let testMode = false; // テストモードフラグ
+let preAnalyzedMouthData = null; // 事前解析した口の動きデータ
+let audioPlaybackStartTime = 0; // 音声再生開始時間
+let usingPreAnalyzedData = false; // 事前解析データを使用しているかのフラグ
 
 // APIのベースURL
 const API_BASE_URL = 'http://localhost:3000';
@@ -104,6 +107,14 @@ window.addEventListener('DOMContentLoaded', () => {
   setTimeout(async () => {
     try {
       showDebugInfo('初期化処理を開始します...');
+      
+      // AudioContextの初期化
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        showDebugInfo('AudioContextを初期化しました');
+      } catch (audioError) {
+        showDebugInfo(`AudioContext初期化エラー: ${audioError.message}`);
+      }
       
       // Live2Dの初期化
       await initLive2D();
@@ -470,7 +481,12 @@ async function playVoice(audioUrl) {
     }
     
     try {
+      showDebugInfo('音声データのデコードを開始...');
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      showDebugInfo(`音声データのデコード完了: 長さ ${audioBuffer.duration.toFixed(2)}秒`);
+      
+      // 事前解析モードを使用して口の動きデータを生成
+      await preAnalyzeAudio(audioBuffer);
       
       // 前の音声が再生中なら停止
       if (audioSource) {
@@ -484,7 +500,7 @@ async function playVoice(audioUrl) {
       
       // リップシンク用のAnalyserNodeを作成
       analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048; // より高い解像度で解析できるよう増加（元は1024）
+      analyser.fftSize = 2048; // より高い解像度で解析できるよう増加
       
       // 接続: ソース → アナライザー → 出力
       audioSource.connect(analyser);
@@ -496,12 +512,22 @@ async function playVoice(audioUrl) {
         stopCurrentLipSync();
       };
       
+      // 再生開始時間を記録
+      audioPlaybackStartTime = audioContext.currentTime;
+      
+      // 事前解析データを使用したリップシンクアニメーションを準備
+      usingPreAnalyzedData = preAnalyzedMouthData && preAnalyzedMouthData.length > 0;
+      if (usingPreAnalyzedData) {
+        showDebugInfo(`事前解析データを使用したリップシンクを開始: ${preAnalyzedMouthData.length}フレーム`);
+        startPreAnalyzedLipSync();
+      } else {
+        showDebugInfo('リアルタイム解析によるリップシンクを開始');
+        startLipSyncAnimation();
+      }
+      
       // 再生開始
       audioSource.start(0);
       showDebugInfo('音声再生を開始しました');
-      
-      // リップシンクのアニメーションを開始
-      startLipSyncAnimation();
       
     } catch (decodeError) {
       showDebugInfo(`音声デコードエラー: ${decodeError.message}. ダミーリップシンクを使用します。`);
@@ -515,7 +541,280 @@ async function playVoice(audioUrl) {
   }
 }
 
-// リップシンクアニメーションを開始する関数
+// 音声データを事前解析して口の動きデータを生成
+async function preAnalyzeAudio(audioBuffer) {
+  showDebugInfo('音声の事前解析を開始...');
+  
+  // 解析間隔（秒）- 10msごとにサンプリング
+  const analyzeInterval = 0.01;
+  const audioLength = audioBuffer.duration;
+  const sampleCount = Math.ceil(audioLength / analyzeInterval);
+  
+  // 口の動きデータを格納する配列
+  preAnalyzedMouthData = [];
+  
+  // オフラインの音声コンテキストを作成（高速処理のため）
+  const offlineCtx = new OfflineAudioContext(
+    audioBuffer.numberOfChannels,
+    audioBuffer.length,
+    audioBuffer.sampleRate
+  );
+  
+  // ソースノードとアナライザーノードを作成
+  const source = offlineCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  
+  const analyser = offlineCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  
+  // ノードを接続
+  source.connect(analyser);
+  analyser.connect(offlineCtx.destination);
+  
+  // 周波数データバッファを作成
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  
+  // 母音の周波数帯域に重点を置くウェイト
+  const frequencyWeights = createFrequencyWeights(bufferLength, offlineCtx.sampleRate, analyser.fftSize);
+  
+  // リップシンクのパラメータを設定
+  const volumeThreshold = 8;  // 音量しきい値
+  const amplificationFactor = 3.8;  // 口の開き具合の増幅率（さらに増幅）
+  
+  // 時間変数と音量履歴
+  let time = 0;
+  const volumeHistory = new Array(8).fill(0);
+  let historyIndex = 0;
+  
+  // 口の動きにリズムを加えるパターン
+  const rhythmPatterns = [
+    { frequency: 4, amplitude: 0.15 },
+    { frequency: 8, amplitude: 0.1 },
+    { frequency: 12, amplitude: 0.07 },
+    { frequency: 2, amplitude: 0.05 }
+  ];
+  
+  // 音声を少しずつ処理
+  source.start(0);
+  
+  // オフラインレンダリングを実行しながら解析
+  let currentTime = 0;
+  
+  while (currentTime < audioLength) {
+    // オフラインコンテキストで指定時間までレンダリング
+    await offlineCtx.suspend(currentTime);
+    
+    // 周波数データを取得
+    analyser.getByteFrequencyData(dataArray);
+    
+    // 母音の周波数帯域を重点的に解析
+    let totalVolume = 0;
+    let count = 0;
+    
+    for (let i = 2; i < Math.min(150, bufferLength); i++) {
+      totalVolume += dataArray[i] * frequencyWeights[i];
+      count++;
+    }
+    
+    // 音量の平均値を計算
+    const average = count > 0 ? totalVolume / count : 0;
+    
+    // 音量履歴を更新
+    volumeHistory[historyIndex] = average;
+    historyIndex = (historyIndex + 1) % volumeHistory.length;
+    
+    // 時間変数を更新
+    time += analyzeInterval * 10; // 変調用の時間パラメータ
+    
+    // 口の開き具合を計算
+    let mouthOpenValue;
+    if (average < volumeThreshold) {
+      mouthOpenValue = 0; // しきい値未満なら口を閉じる
+    } else {
+      // 基本値：音量をスケーリングしてamplificationFactor倍に
+      const baseValue = Math.min(1.0, (average - volumeThreshold) / 80 * amplificationFactor);
+      
+      // 複数のリズムパターンを組み合わせて、より自然な周期的変調を追加
+      let modulation = 0;
+      rhythmPatterns.forEach(pattern => {
+        modulation += Math.sin(time * pattern.frequency) * pattern.amplitude;
+      });
+      
+      // 音量の変化率も加味（ダイナミクスを強調）
+      const volumeVariation = Math.max(0, Math.min(0.35, getVolumeVariation(volumeHistory) * 2.5));
+      
+      // 基本値 + 変調 + 音量変化率
+      mouthOpenValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation), 1);
+      
+      // 音節の区切りをより明確にするために、音量の閾値に応じた追加処理
+      if (average > volumeThreshold * 3) {
+        // 大きな音量変化があれば口をより大きく開ける（子音など）
+        mouthOpenValue = Math.min(mouthOpenValue * 1.3, 1);
+      }
+    }
+    
+    // 口の動きデータを配列に追加
+    preAnalyzedMouthData.push({
+      time: currentTime,
+      value: mouthOpenValue
+    });
+    
+    // 次の時間へ進む
+    currentTime += analyzeInterval;
+    offlineCtx.resume();
+  }
+  
+  // 音声データの事前解析が完了したことを通知
+  showDebugInfo(`音声の事前解析が完了しました: ${preAnalyzedMouthData.length}フレーム生成`);
+  
+  // 口の動きをより自然にするための後処理（スムージング）
+  smoothMouthData();
+  
+  return preAnalyzedMouthData;
+}
+
+// 口の動きデータをスムージング処理する関数
+function smoothMouthData() {
+  if (!preAnalyzedMouthData || preAnalyzedMouthData.length < 3) return;
+  
+  // スムージング係数 - 値が大きいほど滑らか（0.0〜1.0）
+  const smoothingFactor = 0.5;
+  
+  // 最初のデータは保持
+  let prevValue = preAnalyzedMouthData[0].value;
+  
+  // 2番目以降のデータをスムージング
+  for (let i = 1; i < preAnalyzedMouthData.length; i++) {
+    const currentValue = preAnalyzedMouthData[i].value;
+    // スムージングした値を計算
+    const smoothedValue = prevValue + smoothingFactor * (currentValue - prevValue);
+    // 値を更新
+    preAnalyzedMouthData[i].value = smoothedValue;
+    prevValue = smoothedValue;
+  }
+  
+  // さらにピークを強調（メリハリをつける）
+  enhancePeaks();
+}
+
+// 口の動きのピークを強調する関数
+function enhancePeaks() {
+  if (!preAnalyzedMouthData || preAnalyzedMouthData.length < 5) return;
+  
+  // ピーク検出とその強調
+  for (let i = 2; i < preAnalyzedMouthData.length - 2; i++) {
+    const prev2 = preAnalyzedMouthData[i-2].value;
+    const prev1 = preAnalyzedMouthData[i-1].value;
+    const current = preAnalyzedMouthData[i].value;
+    const next1 = preAnalyzedMouthData[i+1].value;
+    const next2 = preAnalyzedMouthData[i+2].value;
+    
+    // ピークを検出（現在の値が前後より大きければピーク）
+    if (current > prev1 && current > next1 && current > 0.2) {
+      // ピークを強調（最大1.0まで）
+      preAnalyzedMouthData[i].value = Math.min(current * 1.3, 1.0);
+      
+      // ピークの前後も少し強調して自然な曲線に
+      if (prev1 > 0.1) preAnalyzedMouthData[i-1].value = Math.min(prev1 * 1.15, 1.0);
+      if (next1 > 0.1) preAnalyzedMouthData[i+1].value = Math.min(next1 * 1.15, 1.0);
+    }
+    
+    // 谷を検出（現在の値が前後より小さければ谷）
+    if (current < prev1 && current < next1 && current < 0.1) {
+      // 谷をより深くする（最小0.0まで）
+      preAnalyzedMouthData[i].value = Math.max(current * 0.7, 0.0);
+    }
+  }
+}
+
+// 事前解析したデータを使用したリップシンクアニメーション
+function startPreAnalyzedLipSync() {
+  if (!preAnalyzedMouthData || preAnalyzedMouthData.length === 0) {
+    showDebugInfo('事前解析データがありません。リアルタイム解析に切り替えます。');
+    startLipSyncAnimation();
+    return;
+  }
+  
+  showDebugInfo('事前解析データを使用したリップシンクを開始します。');
+  
+  // アニメーションフレーム関数
+  function animateMouth() {
+    // アニメーションフレームIDを保存
+    animationFrameId = requestAnimationFrame(animateMouth);
+    
+    if (!model || !audioContext || !audioSource) return;
+    
+    // 現在の再生時間を取得
+    const currentPlaybackTime = audioContext.currentTime - audioPlaybackStartTime;
+    
+    // 現在の時間に対応する口の開き具合を検索
+    let mouthOpenValue = 0;
+    
+    // 最も近い時間のデータを使用
+    for (let i = 0; i < preAnalyzedMouthData.length; i++) {
+      const data = preAnalyzedMouthData[i];
+      if (data.time > currentPlaybackTime) {
+        // 前後のデータ間で線形補間
+        if (i > 0) {
+          const prevData = preAnalyzedMouthData[i-1];
+          const t = (currentPlaybackTime - prevData.time) / (data.time - prevData.time);
+          mouthOpenValue = prevData.value + t * (data.value - prevData.value);
+        } else {
+          mouthOpenValue = data.value;
+        }
+        break;
+      }
+    }
+    
+    // 現在の再生時間がすべてのデータを超えた場合は最後のデータを使用
+    if (mouthOpenValue === 0 && preAnalyzedMouthData.length > 0 && currentPlaybackTime > preAnalyzedMouthData[0].time) {
+      mouthOpenValue = preAnalyzedMouthData[preAnalyzedMouthData.length - 1].value;
+    }
+    
+    // モデルに適用
+    applyMouthOpenValue(mouthOpenValue);
+  }
+  
+  // アニメーション開始
+  animateMouth();
+}
+
+// 周波数重みを作成する関数
+function createFrequencyWeights(bufferLength, sampleRate, fftSize) {
+  const weights = new Array(bufferLength).fill(1);
+  
+  for (let i = 0; i < bufferLength; i++) {
+    const freq = i * sampleRate / fftSize;
+    if (freq < 80) {
+      weights[i] = 0.1; // 低周波数は抑制
+    } else if (freq >= 80 && freq < 500) {
+      weights[i] = 0.8; // 低〜中域
+    } else if (freq >= 500 && freq < 2000) {
+      weights[i] = 1.5; // 母音が集中する周波数帯を強調
+    } else if (freq >= 2000 && freq < 3000) {
+      weights[i] = 1.0; // 中〜高域
+    } else {
+      weights[i] = 0.2; // 高周波数は抑制
+    }
+  }
+  
+  return weights;
+}
+
+// 音量の変化率を計算する関数
+function getVolumeVariation(history) {
+  if (history.length < 2) return 0;
+  
+  let totalDiff = 0;
+  for (let i = 1; i < history.length; i++) {
+    totalDiff += Math.abs(history[i] - history[i-1]);
+  }
+  
+  return totalDiff / (history.length - 1) / 100; // 正規化
+}
+
+// リップシンクアニメーションを開始する関数（リアルタイム解析）
 function startLipSyncAnimation() {
   // バッファ長の取得
   const bufferLength = analyser.frequencyBinCount;
@@ -524,39 +823,22 @@ function startLipSyncAnimation() {
   // 前回の値を保持して滑らかに変化させる
   let lastMouthOpenValue = 0;
   // 音量しきい値（これより小さい音量では口を閉じる）
-  const volumeThreshold = 8; // より反応しやすく（元は10）
+  const volumeThreshold = 8; // より反応しやすく
   // 滑らかさ調整係数（値が大きいほど反応が早い）
-  const smoothingFactor = 0.9; // より反応を早く（元は0.8）
+  const smoothingFactor = 0.9; // より反応を早く
   // 口の開閉を増幅する係数
-  const amplificationFactor = 3.5; // より目立つ口の動き（元は3.0）
+  const amplificationFactor = 3.8; // より目立つ口の動き
   
   // 口の動きをさらに増強するための周期的な変調に使用する変数
   let time = 0;
-  const modulationSpeed = 0.25; // 変調速度を上げる（元は0.2）
+  const modulationSpeed = 0.25; // 変調速度
   
   // 音量履歴の記録用（口の動きをより自然にするため）
-  const volumeHistory = new Array(8).fill(0); // より長い履歴（元は5）
+  const volumeHistory = new Array(8).fill(0);
   let historyIndex = 0;
   
   // 音声の特定周波数帯に重点を置くためのウェイト設定
-  const frequencyWeights = new Array(bufferLength).fill(1);
-  
-  // 人間の声に関連する周波数帯（約80Hz〜3000Hz）に重点を置く
-  // 特に母音が集中する500Hz〜2000Hz帯域を強調
-  for (let i = 0; i < bufferLength; i++) {
-    const freq = i * audioContext.sampleRate / analyser.fftSize;
-    if (freq < 80) {
-      frequencyWeights[i] = 0.1; // 低周波数は抑制
-    } else if (freq >= 80 && freq < 500) {
-      frequencyWeights[i] = 0.8; // 低〜中域は重要
-    } else if (freq >= 500 && freq < 2000) {
-      frequencyWeights[i] = 1.5; // 母音が集中する周波数帯を強調
-    } else if (freq >= 2000 && freq < 3000) {
-      frequencyWeights[i] = 1.0; // 中〜高域も重要
-    } else {
-      frequencyWeights[i] = 0.2; // 高周波数は抑制
-    }
-  }
+  const frequencyWeights = createFrequencyWeights(bufferLength, audioContext.sampleRate, analyser.fftSize);
   
   // 口の開閉パターンの複雑さを増すためのパラメータ
   const rhythmPatterns = [
@@ -623,6 +905,12 @@ function startLipSyncAnimation() {
       
       // 基本値 + 変調 + 音量変化率 + アクセント（急な変化）
       targetMouthValue = Math.min(Math.max(0, baseValue + modulation + volumeVariation + accentFactor), 1);
+      
+      // 音節の区切りをより明確にするために、音量の閾値に応じた追加処理
+      if (average > volumeThreshold * 3) {
+        // 大きな音量変化があれば口をより大きく開ける（子音など）
+        targetMouthValue = Math.min(targetMouthValue * 1.3, 1);
+      }
     }
     
     // スムージングを行うが、反応速度を改善
@@ -636,18 +924,6 @@ function startLipSyncAnimation() {
     if (DEBUG_MODE && ++debugCounter % 10 === 0) {
       showDebugInfo(`音量: ${average.toFixed(2)}, 口の開き: ${mouthOpenValue.toFixed(2)}`);
     }
-  }
-  
-  // 音量の変化率を計算する関数
-  function getVolumeVariation(history) {
-    if (history.length < 2) return 0;
-    
-    let totalDiff = 0;
-    for (let i = 1; i < history.length; i++) {
-      totalDiff += Math.abs(history[i] - history[i-1]);
-    }
-    
-    return totalDiff / (history.length - 1) / 100; // 正規化
   }
   
   // 最近の音量変化を計算（急な変化を検出するため）
@@ -680,6 +956,10 @@ function stopCurrentLipSync() {
     animationFrameId = null;
   }
   
+  // 事前解析データをクリア
+  preAnalyzedMouthData = null;
+  usingPreAnalyzedData = false;
+  
   // 口を閉じる
   applyMouthOpenValue(0);
   
@@ -693,57 +973,66 @@ function performDummyLipSync() {
   // まず現在実行中のリップシンクをすべて停止
   stopCurrentLipSync();
   
-  // 前の値
-  let lastMouthOpenValue = 0;
+  // ダミーリップシンク用のデータを生成
+  const dummyDuration = 5; // 秒
+  const frameRate = 60; // フレームレート
+  const frameCount = dummyDuration * frameRate;
   
-  // スムージング係数
-  const smoothingFactor = 0.9; // 値を大きくして反応を早く（0.8→0.9）
-  
-  // 口の開閉を時間単位でシミュレートする値
-  let time = 0;
-  
-  // ダミーリップシンクタイマー
-  lipSyncInterval = setInterval(() => {
-    time += 0.1;
+  // ダミーの口の動きデータを生成
+  preAnalyzedMouthData = [];
+  for (let i = 0; i < frameCount; i++) {
+    const time = i / frameRate;
     
-    // より複雑なパターンを生成（単純なサイン波ではなく、複数の周波数を組み合わせる）
-    // 基本リズムパターン（ゆっくり）
-    const pattern1 = Math.sin(time * 5) * 0.5;
-    // 細かいリズムパターン（速い）
-    const pattern2 = Math.sin(time * 12) * 0.3;
-    // さらに細かいリズムパターン（より速い）
-    const pattern3 = Math.sin(time * 20) * 0.2;
-    // 非常にゆっくりとした揺らぎ（全体の動きに緩やかな変化を加える）
-    const pattern4 = Math.sin(time * 0.8) * 0.15;
+    // 複雑なパターンを生成（より自然な口の動き）
+    const t = time * 6; // 時間パラメータ
     
-    // 不規則なノイズを加える
+    // 基本のリズムパターン
+    const pattern1 = Math.sin(t * 5) * 0.5; // ゆっくり
+    const pattern2 = Math.sin(t * 12) * 0.3; // 速い
+    const pattern3 = Math.sin(t * 20) * 0.2; // より速い
+    const pattern4 = Math.sin(t * 0.8) * 0.15; // 非常にゆっくり
+    
+    // ノイズ要素（ランダム性）
     const noise = Math.random() * 0.3;
     
-    // 複数のパターンを組み合わせて、さらに不規則さを加える
-    const rawValue = Math.abs(pattern1 + pattern2 * noise + pattern3 * (noise * 0.5) + pattern4);
+    // パターンの組み合わせ
+    let rawValue = Math.abs(pattern1 + pattern2 * noise + pattern3 * (noise * 0.5) + pattern4);
     
-    // 値の範囲を調整
-    const targetValue = Math.min(rawValue, 1);
-    
-    // 口を開閉するタイミングをよりはっきりさせるため、しきい値を設定
-    // 0.15未満なら口を完全に閉じる（これにより「パクパク」感が強調される）
-    let finalValue;
-    if (targetValue < 0.15) {
-      finalValue = 0;
-    } else {
-      finalValue = targetValue;
+    // 音節のパターンを再現（ペースを変える）
+    if (i % 15 === 0 && Math.random() > 0.3) {
+      // 新しい音節の開始 - 口を大きく開ける
+      rawValue = Math.min(rawValue * 2, 1);
+    } else if (i % 15 >= 10) {
+      // 音節の終わり - 口を閉じる傾向
+      rawValue *= 0.5;
     }
     
-    // スムージング処理を高速化
-    const mouthOpenValue = lastMouthOpenValue + smoothingFactor * (finalValue - lastMouthOpenValue);
-    lastMouthOpenValue = mouthOpenValue;
+    // 最終値を計算（範囲を0〜1に制限）
+    let finalValue = Math.min(rawValue, 1);
     
-    // パラメータ適用
-    applyMouthOpenValue(mouthOpenValue);
+    // しきい値を適用（小さい値では完全に口を閉じる）
+    if (finalValue < 0.15) {
+      finalValue = 0;
+    }
     
-  }, 15); // 更新頻度をさらに上げる（20ms→15ms、約66.7FPS）
+    // データを追加
+    preAnalyzedMouthData.push({
+      time: time,
+      value: finalValue
+    });
+  }
   
-  // 5秒後に停止（実際の音声長に合わせる場合は調整）
+  // 口の動きをスムージング
+  smoothMouthData();
+  
+  // ダミー再生開始時間を記録
+  audioPlaybackStartTime = audioContext ? audioContext.currentTime : 0;
+  usingPreAnalyzedData = true;
+  
+  // 事前解析データを使用したリップシンクを開始
+  startPreAnalyzedLipSync();
+  
+  // 5秒後に停止
   setTimeout(() => {
     stopCurrentLipSync();
     showDebugInfo('ダミーリップシンク完了');
@@ -766,7 +1055,7 @@ function applyMouthOpenValue(value) {
   
   // 口の開きを大きくするために値を増幅
   // 増幅率を上げるとより口が大きく開くが、最大値は1.0に制限される
-  const amplifiedValue = Math.min(value * 3.5, 1);
+  const amplifiedValue = Math.min(value * 3.8, 1);
   
   // すべてのパラメータを試す
   let applied = false;
