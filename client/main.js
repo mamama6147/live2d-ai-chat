@@ -495,7 +495,8 @@ async function playVoice(audioUrl) {
       // 単純口パクモードが有効になっている場合
       if (lipSyncMode === 'simple') {
         showDebugInfo('単純口パクモードを使用します');
-        performSimpleMouthAnimation(audioBuffer.duration);
+        // 単純口パクアニメーションを音声再生前に準備するが、すぐには開始しない
+        prepareSimpleMouthAnimation(audioBuffer.duration);
       } else if (lipSyncMode === 'dummy') {
         // ダミーモードが指定された場合
         showDebugInfo('ダミーリップシンクモードを使用します');
@@ -559,6 +560,17 @@ async function playVoice(audioUrl) {
       
       // 再生開始時間を記録
       audioPlaybackStartTime = audioContext.currentTime;
+      
+      // 単純口パクモードの場合は、ここで口を開く処理を先に実行
+      if (lipSyncMode === 'simple') {
+        // 音声再生前に口を開いた状態にする
+        applyMouthOpenValue(0.8); // 適切な開き具合（0〜1の範囲）
+        // 少し遅延させてからアニメーションを開始（自然な動きのため）
+        setTimeout(() => {
+          // 音声再生開始と同時に単純口パクアニメーションを開始
+          startSimpleMouthAnimation();
+        }, 50); // 50ミリ秒遅延（ほぼ同時だが、処理順序を確保するため）
+      }
       
       // 再生開始
       audioSource.start(0);
@@ -921,24 +933,37 @@ function stopCurrentLipSync() {
   showDebugInfo('リップシンクを停止しました');
 }
 
-// 単純な口パクアニメーションを実行する関数（新機能）
-function performSimpleMouthAnimation(duration = 8) {
-  showDebugInfo('単純口パクアニメーションを開始します');
+// 単純口パクアニメーションの準備（すぐには開始しない）
+function prepareSimpleMouthAnimation(duration = 8) {
+  showDebugInfo('単純口パクアニメーションを準備します');
   
-  // まず現在実行中のリップシンクをすべて停止
-  stopCurrentLipSync();
+  // 単純アニメーション実行中フラグをオン
+  simpleMouthAnimationActive = true;
+  
+  // 音声の長さに基づいて自動的に停止（デフォルトは8秒）
+  const animationDuration = duration ? duration * 1000 : 8000;
+  setTimeout(() => {
+    if (simpleMouthAnimationActive) {
+      stopCurrentLipSync();
+      showDebugInfo('単純口パクアニメーション完了');
+    }
+  }, animationDuration);
+}
+
+// 単純口パクアニメーションを開始する関数
+function startSimpleMouthAnimation() {
+  if (!simpleMouthAnimationActive) return;
+  
+  showDebugInfo('単純口パクアニメーションを開始します');
   
   // 単純口パクのステート
   let state = 'closed'; // 初期状態は閉じている
-  let mouthValue = 0;   // 口の開き具合（0-1）
+  let mouthValue = 0.8; // 初期状態で口を開いた状態（音声開始時）
   
   // 口の動作設定
   const openDuration = 200;   // 開く時間（ms）
   const closeDuration = 200;  // 閉じる時間（ms）
   const closedDuration = 200; // 閉じたまま待機する時間（ms）
-  
-  // 単純アニメーション実行中フラグをオン
-  simpleMouthAnimationActive = true;
   
   // 単純口パクアニメーションのタイマー
   function animateSimpleMouth() {
@@ -953,7 +978,6 @@ function performSimpleMouthAnimation(duration = 8) {
         case 'closed':
           // 閉じた状態から開き始める
           state = 'opening';
-          mouthValue = 0;
           break;
           
         case 'opening':
@@ -1000,15 +1024,6 @@ function performSimpleMouthAnimation(duration = 8) {
   
   // アニメーション開始
   animateSimpleMouth();
-  
-  // 音声の長さに基づいて自動的に停止（デフォルトは8秒）
-  const animationDuration = duration ? duration * 1000 : 8000;
-  setTimeout(() => {
-    if (simpleMouthAnimationActive) {
-      stopCurrentLipSync();
-      showDebugInfo('単純口パクアニメーション完了');
-    }
-  }, animationDuration);
 }
 
 // ダミーのリップシンク（音声ファイルがない場合やエラー時）
